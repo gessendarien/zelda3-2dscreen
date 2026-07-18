@@ -11,6 +11,7 @@
 // Touch: right panel touch → equip item at that slot (SS_EquipSlot)
 
 #include <3ds.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -302,6 +303,57 @@ static void draw_item_grid(void) {
   fill_rect(grid_x, 0, 1, BOT_H, C_DIVIDER);
 }
 
+// ── Perf overlay ────────────────────────────────────────────────────────────
+// Six rows: logic, ppu, blit, second screen, audio (tenths of ms per frame)
+// and rendered fps. Values are pushed once per second from main3ds.c.
+
+static int g_perf_vals[6] = {-1, -1, -1, -1, -1, -1};
+
+void SecondScreen3DS_SetPerf(const int vals[6]) {
+  memcpy(g_perf_vals, vals, sizeof(g_perf_vals));
+}
+
+// 3×5 digit font, 3 bits per row, top row in the highest bits.
+static const uint16 kDigitFont[10] = {
+  075557, 026227, 071747, 071717, 055711,
+  074717, 074757, 071122, 075757, 075717,
+};
+
+static void draw_digit2x(int x, int y, int d, uint32 c) {
+  for (int r = 0; r < 5; r++) {
+    int row = (kDigitFont[d] >> ((4 - r) * 3)) & 7;
+    for (int b = 0; b < 3; b++)
+      if (row & (4 >> b))
+        fill_rect(x + b * 2, y + r * 2, 2, 2, c);
+  }
+}
+
+static void draw_number2x(int x, int y, int val, uint32 c) {
+  if (val < 0) return;
+  if (val > 9999) val = 9999;
+  char buf[8];
+  int n = sprintf(buf, "%d", val);
+  for (int i = 0; i < n; i++)
+    draw_digit2x(x + i * 8, y, buf[i] - '0', c);
+}
+
+static void draw_perf_overlay(void) {
+  if (g_perf_vals[5] < 0) return;
+  static const uint32 kPerfColors[6] = {
+    COL(230, 60, 60),    // logic
+    COL(60, 220, 60),    // ppu render
+    COL(80, 200, 230),   // top blit
+    COL(230, 220, 60),   // second screen
+    COL(230, 80, 230),   // audio
+    COL(255, 255, 255),  // fps
+  };
+  fill_rect(0, 0, 48, 70, COL(0, 0, 0));
+  for (int i = 0; i < 6; i++) {
+    fill_rect(2, 5 + i * 11, 4, 4, kPerfColors[i]);
+    draw_number2x(10, 2 + i * 11, g_perf_vals[i], kPerfColors[i]);
+  }
+}
+
 // ── Blit screen buffer to 3DS bottom framebuffer ───────────────────────────
 
 static void flush_to_bottom_screen(void) {
@@ -347,6 +399,7 @@ void SecondScreen3DS_Update(void) {
   draw_map_panel(indoors, link_x, link_y, palace);
   draw_status_bar();
   draw_item_grid();
+  draw_perf_overlay();
 
   flush_to_bottom_screen();
 }

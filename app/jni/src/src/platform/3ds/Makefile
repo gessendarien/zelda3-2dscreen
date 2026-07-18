@@ -47,7 +47,7 @@ INCLUDES    := include $(SRC_ROOT) $(SRC_ROOT)/src
 #---------------------------------------------------------------------------------
 ARCH        := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS      := -g -Wall -O2 -mword-relocations \
+CFLAGS      := -g -Wall -O3 -fomit-frame-pointer -mword-relocations \
                -ffunction-sections \
                $(ARCH)
 

@@ -39,6 +39,7 @@ bool SecondScreen3DS_Init(void);
 void SecondScreen3DS_Update(void);
 bool SecondScreen3DS_HandleTouch(touchPosition *pos, bool touched);
 void SecondScreen3DS_Shutdown(void);
+void SecondScreen3DS_SetPerf(const int vals[6]);
 
 // audio_3ds.c
 void Audio3DS_Init(void);
@@ -55,7 +56,9 @@ static int  g_snes_width, g_snes_height;
 static struct RendererFuncs g_renderer_funcs;
 static uint32 g_gamepad_modifiers;
 static uint16 g_gamepad_last_cmd[kGamepadBtn_Count];
-static bool g_display_perf;
+// Perf overlay on by default while the port is being tuned; toggled by the
+// DisplayPerf key binding.
+static bool g_display_perf = true;
 
 // ── Required stubs (normally in main.c with SDL mutex) ──────────────────────
 
@@ -256,14 +259,24 @@ static int ParseWidescreen3DSKey(void) {
 
 // ── Render ───────────────────────────────────────────────────────────────────
 
+// Per-section timing accumulators (system ticks), averaged once per second
+// and shown on the bottom-screen perf overlay.
+static u64 g_perf_logic, g_perf_ppu, g_perf_blit, g_perf_ss, g_perf_audio;
+static int g_perf_frames, g_perf_drawn;
+
 static void DrawFrame(void) {
   int scale = PpuGetCurrentRenderScale(g_zenv.ppu, g_ppu_render_flags);
   uint8 *pixels = NULL;
   int    pitch  = 0;
   g_renderer_funcs.BeginDraw(g_snes_width * scale, g_snes_height * scale,
                              &pixels, &pitch);
+  u64 t0 = svcGetSystemTick();
   ZeldaDrawPpuFrame(pixels, pitch, g_ppu_render_flags);
+  u64 t1 = svcGetSystemTick();
   g_renderer_funcs.EndDraw();
+  g_perf_ppu  += t1 - t0;
+  g_perf_blit += svcGetSystemTick() - t1;
+  g_perf_drawn++;
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -314,12 +327,14 @@ int main(int argc, char **argv) {
   g_wanted_zelda_features = g_config.features0;
   g_config.new_renderer   = 1;
 
+  // No 4x4Mode7: it renders mode-7 screens at 4x scale (16x the pixels),
+  // far beyond what the 3DS CPU can do, and pointless on a 400px screen.
   g_ppu_render_flags = kPpuRenderFlags_NewRenderer |
-                       g_config.enhanced_mode7   * kPpuRenderFlags_4x4Mode7     |
                        kPpuRenderFlags_Height240  |
                        g_config.no_sprite_limits * kPpuRenderFlags_NoSpriteLimits;
 
   ZeldaEnableMsu(g_config.enable_msu);
+  ZeldaSetLanguage(g_config.language);
   ZeldaReadSram();
 
   // Start audio (soft-fails if DSP firmware is unavailable)
@@ -336,6 +351,14 @@ int main(int argc, char **argv) {
   gfxSetScreenFormat(GFX_BOTTOM, GSP_RGBA8_OES);
   gfxSetDoubleBuffering(GFX_BOTTOM, false);
   SecondScreen3DS_Init();
+
+  // ── Main loop ──
+  // Game logic must run at 60 Hz for correct game speed. When rendering
+  // can't keep up with the vblank budget, frames are skipped (up to 3 in a
+  // row) so slowness shows as a lower fps instead of slow motion.
+  const u64 kTicksPerFrame = SYSCLOCK_ARM11 / 60;
+  u64 next_frame = svcGetSystemTick() + kTicksPerFrame;
+  int skips = 0;
 
   while (aptMainLoop()) {
     // ── Input ──
@@ -358,29 +381,61 @@ int main(int argc, char **argv) {
     }
 
     // ── Audio ──
+    u64 t0 = svcGetSystemTick();
     Audio3DS_Update();
+    u64 t1 = svcGetSystemTick();
 
     // ── Game logic ──
     if (!g_paused) {
-      int inputs = g_input1_state;
-      ZeldaRunFrame(inputs);
-    }
-
-    // ── Rendering ──
-    DrawFrame();
-    // The map/inventory panel is near-static: 30 Hz updates halve its cost.
-    static uint32 frame_ctr;
-    if (frame_ctr++ & 1)
-      SecondScreen3DS_Update();
-
-    // ── Frame timing: target 60 fps ──
-    gfxFlushBuffers();
-    gfxSwapBuffers();
-    gspWaitForVBlank();
-
-    // Turbo: run an extra logic frame without rendering
-    if (g_turbo && !g_paused) {
       ZeldaRunFrame(g_input1_state);
+      // Turbo: run an extra logic frame
+      if (g_turbo)
+        ZeldaRunFrame(g_input1_state);
+    }
+    u64 t2 = svcGetSystemTick();
+    g_perf_audio += t1 - t0;
+    g_perf_logic += t2 - t1;
+
+    // ── Rendering (skipped when behind) ──
+    bool behind = (s64)(svcGetSystemTick() - next_frame) > 0;
+    if (!behind || skips >= 3) {
+      DrawFrame();
+      // The map/inventory panel is near-static: 30 Hz updates halve its cost.
+      static uint32 frame_ctr;
+      if (frame_ctr++ & 1) {
+        u64 t3 = svcGetSystemTick();
+        SecondScreen3DS_Update();
+        g_perf_ss += svcGetSystemTick() - t3;
+      }
+      gfxFlushBuffers();
+      gfxSwapBuffers();
+      skips = 0;
+    } else {
+      skips++;
+    }
+    if (!behind)
+      gspWaitForVBlank();
+    next_frame += kTicksPerFrame;
+    // Hard resync when very late (loads, app sleep) instead of racing ahead.
+    if ((s64)(svcGetSystemTick() - next_frame) > (s64)(4 * kTicksPerFrame))
+      next_frame = svcGetSystemTick() + kTicksPerFrame;
+
+    // ── Perf overlay, refreshed once per second of game time ──
+    if (++g_perf_frames >= 60) {
+      int vals[6] = {-1, -1, -1, -1, -1, -1};
+      if (g_display_perf) {
+        // Sections in tenths of a millisecond (avg per frame), then fps.
+        int df = g_perf_drawn ? g_perf_drawn : 1;
+        vals[0] = (int)(g_perf_logic * 10000 / SYSCLOCK_ARM11 / 60);
+        vals[1] = (int)(g_perf_ppu   * 10000 / SYSCLOCK_ARM11 / df);
+        vals[2] = (int)(g_perf_blit  * 10000 / SYSCLOCK_ARM11 / df);
+        vals[3] = (int)(g_perf_ss    * 10000 / SYSCLOCK_ARM11 / df);
+        vals[4] = (int)(g_perf_audio * 10000 / SYSCLOCK_ARM11 / 60);
+        vals[5] = g_perf_drawn;
+      }
+      SecondScreen3DS_SetPerf(vals);
+      g_perf_logic = g_perf_ppu = g_perf_blit = g_perf_ss = g_perf_audio = 0;
+      g_perf_frames = g_perf_drawn = 0;
     }
   }
 
