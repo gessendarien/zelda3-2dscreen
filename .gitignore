@@ -32,3 +32,8 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# 3DS build artifacts
+*.3dsx
+*.smdh
+*.elf

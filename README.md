@@ -47,6 +47,28 @@ If you'd rather extract the assets on a computer, drop your zelda3_assets.dat in
 10. Paste in this command `python3 assets/restool.py --extract-from-rom`
 11. It should pause for a while and when it finishes you should be able to see zelda3_assets.dat in the same folder as your rom. You can go ahead and copy that to the Android/data/com.dishii.zelda3/files location.
 
+# Nintendo 3DS
+
+The 3DS port (`src/platform/3ds/`) uses both screens natively: the game runs on the top screen and the bottom touchscreen shows the world/dungeon map, hearts/magic status and the touch inventory.
+
+Installation (homebrew, runs via the Homebrew Launcher):
+
+1. Copy `zelda3.3dsx` to `sd:/3ds/`.
+2. Copy your `zelda3_assets.dat` to `sd:/3ds/zelda3/` (the executable ships no game assets — build the file with the instructions above or from the original repository).
+3. Launch it from the Homebrew Launcher. Saves go to `sd:/3ds/zelda3/saves/`.
+
+Optional: copy `src/platform/3ds/zelda3.ini` to `sd:/3ds/zelda3/zelda3.ini` to tweak settings. By default a New 3DS runs in widescreen (400×240, with the higher CPU clock enabled) and an Old 3DS runs at 256×240 for speed; override this with the `Widescreen3DS = on/off/auto` key. Audio needs a DSP firmware dump (`sd:/3ds/dspfirm.cdc`, created by running [DSP1](https://github.com/zoogie/DSP1) once); without it the game runs muted.
+
+Building needs devkitPro (devkitARM + libctru), easiest via Docker:
+
+```
+docker run --rm --user $(id -u):$(id -g) -v $(pwd)/app/jni/src:/source devkitpro/devkitarm \
+  bash -c 'export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM HOME=/tmp; \
+           cd /source/src/platform/3ds && make'
+```
+
+The result is `src/platform/3ds/zelda3.3dsx` (~1 MB).
+
 # Building
 
 The native code lives in `app/jni/src` and builds two ways; pick the one for your target. `second_screen.c` is the shared, platform-free core (game-state reads + art generation); each target compiles only its own frontend from `src/platform/`:
