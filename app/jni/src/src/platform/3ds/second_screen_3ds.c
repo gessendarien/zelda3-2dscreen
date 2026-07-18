@@ -25,10 +25,12 @@
 int  SS_GetLinkX(void);
 int  SS_GetLinkY(void);
 int  SS_GetModule(void);
+int  SS_GetArea(void);
 bool SS_IsIndoors(void);
 void SS_ReadSram(uint8 *out, int n);
 int  SS_GetEquippedSlot(void);
 int  SS_GetDungeon(void);
+int  SS_GetDungeonLayout(int palace, uint8 *out, int cap);
 bool SS_RenderIconSheet(uint32 *px);
 bool SS_RenderWorldMap(uint32 *px, bool dark);
 bool SS_RenderDungeonFloor(int palace, int floorIdx, uint32 *px);
@@ -76,8 +78,8 @@ static uint32 g_icon_sheet[160 * 128];      // icon sprite sheet (10×8 × 16px)
 static bool g_map_dirty = true;
 static bool g_icons_dirty = true;
 static bool g_dark_world_cached = false;
-static int  g_cached_palace = -1;
-static int  g_cached_floor  = -1;
+static uint32 g_frame;                       // update counter (30 Hz) for blinking
+static int  g_last_out_x = 2048, g_last_out_y = 2048;  // Link's last outdoor spot
 
 // SRAM snapshot
 static uint8 g_sram[256];
@@ -140,48 +142,82 @@ static void refresh_world_map(bool dark) {
   }
 }
 
-static void refresh_dung_map(int palace, int floor_idx) {
-  if (g_cached_palace == palace && g_cached_floor == floor_idx) return;
-  if (SS_RenderDungeonFloor(palace, floor_idx, g_dung_map)) {
-    g_cached_palace = palace;
-    g_cached_floor  = floor_idx;
+// Overworld: 192×192 viewport of the 512×512 map centred on (link_x, link_y).
+// Scale from SDL code: map_px = 128 + (link_coord / 4096.0) * 256
+static void draw_overworld_view(int link_x, int link_y, bool with_marker) {
+  int map_cx = 128 + (link_x * 256 / 4096);
+  int map_cy = 128 + (link_y * 256 / 4096);
+  // Dark world: link_x above ~4096 means dark world half of the combined map.
+  bool dark = (link_x >= 4096) || (g_sram[0x7B] != 0);
+  refresh_world_map(dark);
+
+  int vp_x = map_cx - MAP_SZ / 2;
+  int vp_y = map_cy - MAP_SZ / 2;
+  if (vp_x < 0) vp_x = 0;
+  if (vp_y < 0) vp_y = 0;
+  if (vp_x > 512 - MAP_SZ) vp_x = 512 - MAP_SZ;
+  if (vp_y > 512 - MAP_SZ) vp_y = 512 - MAP_SZ;
+
+  blit(g_world_map, 512, vp_x, vp_y, MAP_SZ, MAP_SZ, 0, 0);
+
+  if (with_marker) {
+    // Draw Link marker (4×4 yellow dot)
+    int dot_x = (map_cx - vp_x) - 2;
+    int dot_y = (map_cy - vp_y) - 2;
+    fill_rect(dot_x, dot_y, 4, 4, COL(255, 255, 0));
   }
 }
 
 static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_info) {
   fill_rect(0, 0, MAP_W, MAP_SZ, C_BG_MAP);
 
-  if (indoors) {
-    // SS_GetDungeon() returns (palace_idx) | (floor_idx << 8)
-    int palace_idx = dungeon_info & 0xFF;
-    int floor_idx  = (int8_t)((dungeon_info >> 8) & 0xFF);
-    // Dungeon map: 80×80 scaled 2× = 160×160, centred in the 192×192 area
-    refresh_dung_map(palace_idx, floor_idx);
-    int off_x = (MAP_SZ - 160) / 2;
-    int off_y = (MAP_SZ - 160) / 2;
-    blit2x(g_dung_map, 80, 0, 0, 80, 80, off_x, off_y);
-  } else {
-    // Overworld: 192×192 viewport of the 512×512 map centred on Link.
-    // Scale from SDL code: map_px = 128 + (link_coord / 4096.0) * 256
-    int map_cx = 128 + (link_x * 256 / 4096);
-    int map_cy = 128 + (link_y * 256 / 4096);
-    // Dark world: link_x above ~4096 means dark world half of the combined map.
-    bool dark = (link_x >= 4096) || (g_sram[0x7B] != 0);
-    refresh_world_map(dark);
+  if (!indoors) {
+    draw_overworld_view(link_x, link_y, true);
+    return;
+  }
 
-    int vp_x = map_cx - MAP_SZ / 2;
-    int vp_y = map_cy - MAP_SZ / 2;
-    if (vp_x < 0) vp_x = 0;
-    if (vp_y < 0) vp_y = 0;
-    if (vp_x > 512 - MAP_SZ) vp_x = 512 - MAP_SZ;
-    if (vp_y > 512 - MAP_SZ) vp_y = 512 - MAP_SZ;
+  // SS_GetDungeon() returns palace (0xFF outside palaces) | signed floor << 8
+  int palace_idx = dungeon_info & 0xFF;
+  int floor      = (int8_t)((dungeon_info >> 8) & 0xFF);
 
-    blit(g_world_map, 512, vp_x, vp_y, MAP_SZ, MAP_SZ, 0, 0);
+  if (palace_idx == 0xFF) {
+    // Houses/caves have no dungeon map: keep the overworld view frozen at
+    // the spot where Link went in (same behaviour as the SDL second screen).
+    draw_overworld_view(g_last_out_x, g_last_out_y, false);
+    return;
+  }
 
-    // Draw Link marker (4×4 yellow dot)
-    int dot_x = (map_cx - vp_x) - 2;
-    int dot_y = (map_cy - vp_y) - 2;
-    fill_rect(dot_x, dot_y, 4, 4, COL(255, 255, 0));
+  // SS_RenderDungeonFloor wants a layout index (0..floors-1), not the
+  // signed in-game floor (B1 = -1): offset by the basement count.
+  uint8 lay[16 * 25];
+  int r = SS_GetDungeonLayout(palace_idx, lay, sizeof(lay));
+  if (r < 0) return;
+  int floors    = r & 0xFF;
+  int basements = (r >> 8) & 0xFF;
+  if (floors > 16) floors = 16;
+  int li = floor + basements;
+  if (li < 0) li = 0;
+  if (li > floors - 1) li = floors - 1;
+
+  // Re-render every update: visited rooms and the map item change while
+  // playing, so a cached bitmap would freeze the automap.
+  if (!SS_RenderDungeonFloor(palace_idx, li, g_dung_map)) return;
+
+  // Dungeon floor: 80×80 scaled 2× = 160×160, centred in the 192×192 area
+  int off_x = (MAP_SZ - 160) / 2;
+  int off_y = (MAP_SZ - 160) / 2;
+  blit2x(g_dung_map, 80, 0, 0, 80, 80, off_x, off_y);
+
+  // Blinking marker on the current room (each room = 16px → 32px after 2x)
+  if (g_frame & 4) {
+    int room = SS_GetArea() & 0xFF;
+    for (int i = 0; i < 25; i++) {
+      if (lay[li * 25 + i] == room && room != 0x0F) {
+        fill_rect(off_x + (i % 5) * 32 + 12, off_y + (i / 5) * 32 + 12, 8, 8,
+                  COL(255, 80, 80));
+        break;
+      }
+    }
   }
 }
 
@@ -388,10 +424,18 @@ void SecondScreen3DS_Update(void) {
   // Snapshot live game state
   SS_ReadSram(g_sram, 256);
 
+  g_frame++;
   bool indoors = SS_IsIndoors();
   int  link_x  = SS_GetLinkX();
   int  link_y  = SS_GetLinkY();
   int  palace  = SS_GetDungeon();
+
+  // Remember where Link last stood outdoors: houses/caves freeze the
+  // overworld view at that spot.
+  if (!indoors) {
+    g_last_out_x = link_x;
+    g_last_out_y = link_y;
+  }
 
   // Clear screen
   fill_rect(0, 0, BOT_W, BOT_H, C_BG_MAP);
