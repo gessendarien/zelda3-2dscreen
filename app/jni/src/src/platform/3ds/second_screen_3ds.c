@@ -3,8 +3,8 @@
 // and item inventory here, mirroring the Android MinimapView functionality.
 //
 // Layout (320x240):
-//   Left  192px: world map viewport (192x192) or dungeon floor (80x80→160x160)
-//                + 48px status bar at bottom (hearts, magic, rupees, keys)
+//   Left  192px: world map viewport (192x240) when outdoors, or the dungeon
+//                floor (80x80→160x160) + floor strip (B1 1F 2F...) indoors
 //   Right 128px: 4×5 grid of item icons (20 usable items)
 //                + 40px equipped-item display at bottom
 //
@@ -59,12 +59,6 @@ enum {
   C_CELL_BG  = COL(30, 30, 45),
   C_CELL_SEL = COL(50, 100, 180),
   C_EMPTY    = COL(20, 20, 30),
-  C_HRT_FULL = COL(220, 40,  40),
-  C_HRT_HALF = COL(160, 40,  40),
-  C_HRT_NONE = COL(50,  20,  20),
-  C_MAGIC_FG = COL(50,  200, 80),
-  C_MAGIC_BG = COL(20,  50,  25),
-  C_STAT_TXT = COL(200, 200, 160),
   C_EQUIP_HL = COL(60,  120, 200),
   C_BORDER   = COL(80,  80,  100),
 };
@@ -127,9 +121,29 @@ static void blit2x(const uint32 *src, int src_w,
   }
 }
 
-// Draw a single pixel heart segment (4×4 fill).
-static void draw_heart_seg(int x, int y, uint32 c) {
-  fill_rect(x, y, 4, 4, c);
+// 3×5 glyphs, 3 bits per row, top row in the highest octal digit.
+static const uint16 kDigitFont[10] = {
+  075557, 026227, 071747, 071717, 055711,
+  074717, 074757, 071122, 075757, 075717,
+};
+enum { kGlyphB = 065656, kGlyphF = 074644 };
+
+static void draw_glyph2x(int x, int y, uint16 glyph, uint32 c) {
+  for (int r = 0; r < 5; r++) {
+    int row = (glyph >> ((4 - r) * 3)) & 7;
+    for (int b = 0; b < 3; b++)
+      if (row & (4 >> b))
+        fill_rect(x + b * 2, y + r * 2, 2, 2, c);
+  }
+}
+
+static void draw_number2x(int x, int y, int val, uint32 c) {
+  if (val < 0) return;
+  if (val > 9999) val = 9999;
+  char buf[8];
+  int n = sprintf(buf, "%d", val);
+  for (int i = 0; i < n; i++)
+    draw_glyph2x(x + i * 8, y, kDigitFont[buf[i] - '0'], c);
 }
 
 // ── Map rendering ───────────────────────────────────────────────────────────
@@ -142,23 +156,23 @@ static void refresh_world_map(bool dark) {
   }
 }
 
-// Overworld: 192×192 viewport of the 512×512 map centred on (link_x, link_y).
-// Scale from SDL code: map_px = 128 + (link_coord / 4096.0) * 256
-static void draw_overworld_view(int link_x, int link_y, bool with_marker) {
+// Overworld: MAP_W×view_h viewport of the 512×512 map centred on
+// (link_x, link_y). Scale from SDL code: map_px = 128 + (link_coord / 4096.0) * 256
+static void draw_overworld_view(int link_x, int link_y, bool with_marker, int view_h) {
   int map_cx = 128 + (link_x * 256 / 4096);
   int map_cy = 128 + (link_y * 256 / 4096);
   // Dark world: link_x above ~4096 means dark world half of the combined map.
   bool dark = (link_x >= 4096) || (g_sram[0x7B] != 0);
   refresh_world_map(dark);
 
-  int vp_x = map_cx - MAP_SZ / 2;
-  int vp_y = map_cy - MAP_SZ / 2;
+  int vp_x = map_cx - MAP_W / 2;
+  int vp_y = map_cy - view_h / 2;
   if (vp_x < 0) vp_x = 0;
   if (vp_y < 0) vp_y = 0;
-  if (vp_x > 512 - MAP_SZ) vp_x = 512 - MAP_SZ;
-  if (vp_y > 512 - MAP_SZ) vp_y = 512 - MAP_SZ;
+  if (vp_x > 512 - MAP_W) vp_x = 512 - MAP_W;
+  if (vp_y > 512 - view_h) vp_y = 512 - view_h;
 
-  blit(g_world_map, 512, vp_x, vp_y, MAP_SZ, MAP_SZ, 0, 0);
+  blit(g_world_map, 512, vp_x, vp_y, MAP_W, view_h, 0, 0);
 
   if (with_marker) {
     // Draw Link marker (4×4 yellow dot)
@@ -168,11 +182,37 @@ static void draw_overworld_view(int link_x, int link_y, bool with_marker) {
   }
 }
 
+// Floor plaques below the dungeon map (B2 B1 1F 2F ...), current highlighted.
+// Plaque f=0 is the deepest basement, matching the layout index order.
+static void draw_floor_strip(int floors, int basements, int cur_floor) {
+  int pw = (MAP_W - 8) / floors;
+  if (pw > 30) pw = 30;
+  int ph = 16;
+  int x0 = (MAP_W - pw * floors) / 2;
+  int y0 = MAP_SZ + (STATUS_H - ph) / 2;
+  for (int f = 0; f < floors; f++) {
+    int fl = f - basements;
+    int x = x0 + f * pw;
+    if (fl < -9 || fl > 8) continue;  // keep glyph lookups in range
+    bool cur = (fl == cur_floor);
+    fill_rect(x + 1, y0, pw - 2, ph, cur ? COL(60, 110, 190) : C_CELL_BG);
+    uint32 c = cur ? COL(255, 255, 255) : COL(150, 150, 170);
+    int lx = x + (pw - 13) / 2, ly = y0 + (ph - 10) / 2;
+    if (fl < 0) {
+      draw_glyph2x(lx, ly, kGlyphB, c);
+      draw_glyph2x(lx + 7, ly, kDigitFont[-fl], c);
+    } else {
+      draw_glyph2x(lx, ly, kDigitFont[fl + 1], c);
+      draw_glyph2x(lx + 7, ly, kGlyphF, c);
+    }
+  }
+}
+
 static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_info) {
-  fill_rect(0, 0, MAP_W, MAP_SZ, C_BG_MAP);
+  fill_rect(0, 0, MAP_W, BOT_H, C_BG_MAP);
 
   if (!indoors) {
-    draw_overworld_view(link_x, link_y, true);
+    draw_overworld_view(link_x, link_y, true, BOT_H);
     return;
   }
 
@@ -183,7 +223,7 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
   if (palace_idx == 0xFF) {
     // Houses/caves have no dungeon map: keep the overworld view frozen at
     // the spot where Link went in (same behaviour as the SDL second screen).
-    draw_overworld_view(g_last_out_x, g_last_out_y, false);
+    draw_overworld_view(g_last_out_x, g_last_out_y, false, BOT_H);
     return;
   }
 
@@ -219,51 +259,8 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
       }
     }
   }
-}
 
-// ── Status bar (below map) ──────────────────────────────────────────────────
-
-static void draw_status_bar(void) {
-  int bar_y = MAP_SZ;
-  fill_rect(0, bar_y, MAP_W, STATUS_H, COL(10, 10, 15));
-
-  // Hearts (sram 0x60 = max quarters, 0x5C = current quarters; each heart = 8)
-  int hearts_max = g_sram[0x60] / 8;
-  int hearts_cur = g_sram[0x5C];   // quarter-hearts remaining
-  if (hearts_max < 1) hearts_max = 1;
-  int hx = 4, hy = bar_y + 4;
-  for (int h = 0; h < hearts_max && h < 20; h++) {
-    int quarters = hearts_cur - h * 8;
-    uint32 c;
-    if (quarters >= 8) c = C_HRT_FULL;
-    else if (quarters >= 4) c = C_HRT_HALF;
-    else c = C_HRT_NONE;
-    draw_heart_seg(hx + h * 6, hy, c);
-  }
-
-  // Magic meter bar (sram 0x6D = max, 0x7B = current… game-specific, approximate)
-  int magic_max = g_sram[0x6D];
-  int magic_cur = g_sram[0x7B];
-  if (magic_max > 0) {
-    int bar_w = 120;
-    int filled = (magic_cur > magic_max) ? bar_w : magic_cur * bar_w / magic_max;
-    fill_rect(4,  bar_y + 12, bar_w,    6, C_MAGIC_BG);
-    fill_rect(4,  bar_y + 12, filled,   6, C_MAGIC_FG);
-  }
-
-  // Rupees (sram 0x4D word, little-endian) and keys (sram 0x6E small key count)
-  // Just display as coloured rectangles — proper text needs a font blitter.
-  // Rupees indicator: green dots proportional to amount
-  int rupees = g_sram[0x4D] | (g_sram[0x4E] << 8);
-  int rup_dots = rupees > 0 ? (rupees / 50 + 1) : 0;
-  if (rup_dots > 16) rup_dots = 16;
-  for (int i = 0; i < rup_dots; i++)
-    fill_rect(4 + i * 7, bar_y + 24, 5, 5, COL(80, 220, 100));
-
-  // Small keys: yellow dots
-  int keys = g_sram[0x6E];
-  for (int i = 0; i < keys && i < 12; i++)
-    fill_rect(4 + i * 7, bar_y + 34, 5, 5, COL(230, 200, 50));
+  draw_floor_strip(floors, basements, floor);
 }
 
 // ── Icon sheet + item grid ──────────────────────────────────────────────────
@@ -349,30 +346,6 @@ void SecondScreen3DS_SetPerf(const int vals[6]) {
   memcpy(g_perf_vals, vals, sizeof(g_perf_vals));
 }
 
-// 3×5 digit font, 3 bits per row, top row in the highest bits.
-static const uint16 kDigitFont[10] = {
-  075557, 026227, 071747, 071717, 055711,
-  074717, 074757, 071122, 075757, 075717,
-};
-
-static void draw_digit2x(int x, int y, int d, uint32 c) {
-  for (int r = 0; r < 5; r++) {
-    int row = (kDigitFont[d] >> ((4 - r) * 3)) & 7;
-    for (int b = 0; b < 3; b++)
-      if (row & (4 >> b))
-        fill_rect(x + b * 2, y + r * 2, 2, 2, c);
-  }
-}
-
-static void draw_number2x(int x, int y, int val, uint32 c) {
-  if (val < 0) return;
-  if (val > 9999) val = 9999;
-  char buf[8];
-  int n = sprintf(buf, "%d", val);
-  for (int i = 0; i < n; i++)
-    draw_digit2x(x + i * 8, y, buf[i] - '0', c);
-}
-
 static void draw_perf_overlay(void) {
   if (g_perf_vals[5] < 0) return;
   static const uint32 kPerfColors[6] = {
@@ -441,7 +414,6 @@ void SecondScreen3DS_Update(void) {
   fill_rect(0, 0, BOT_W, BOT_H, C_BG_MAP);
 
   draw_map_panel(indoors, link_x, link_y, palace);
-  draw_status_bar();
   draw_item_grid();
   draw_perf_overlay();
 
