@@ -123,7 +123,7 @@ ifneq ($(ROMFS),)
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean
+.PHONY: all clean cia
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -131,9 +131,20 @@ all: $(BUILD)
 $(BUILD):
 	@mkdir -p $@
 
+# CIA build (installable on CFW consoles). Needs makerom and bannertool in
+# tools/ (or on PATH) — see NOTES.md for where to download them.
+MAKEROM    ?= $(if $(wildcard $(CURDIR)/tools/makerom),$(CURDIR)/tools/makerom,makerom)
+BANNERTOOL ?= $(if $(wildcard $(CURDIR)/tools/bannertool),$(CURDIR)/tools/bannertool,bannertool)
+
+cia: all
+	$(BANNERTOOL) makebanner -i cia/banner.png -a cia/banner.wav -o $(BUILD)/banner.bnr
+	$(MAKEROM) -f cia -o $(TARGET).cia -elf $(TARGET).elf -rsf cia/zelda3.rsf \
+	  -icon $(TARGET).smdh -banner $(BUILD)/banner.bnr -target t -exefslogo
+	@echo built ... $(TARGET).cia
+
 clean:
 	@echo Cleaning...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf
+	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).cia $(OUTPUT).smdh $(TARGET).elf
 
 #---------------------------------------------------------------------------------
 else

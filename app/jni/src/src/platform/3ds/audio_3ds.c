@@ -1,5 +1,6 @@
 // ndsp audio streaming for the 3DS port.
-// Double-buffered PCM16 stereo stream at 32 kHz. Buffers are filled on the
+// Double-buffered PCM16 stereo stream at the configured AudioFreq
+// (default 32 kHz; 44.1/48 kHz for MSU-1). Buffers are filled on the
 // main thread once per frame (Audio3DS_Update) and consumed by the DSP via
 // DMA, so no locking is needed (ZeldaApuLock/Unlock stay no-ops).
 //
@@ -14,7 +15,6 @@
 #include "config.h"
 #include "audio.h"
 
-#define SAMPLE_RATE     32000
 #define SAMPLES_PER_BUF 512
 #define NUM_BUFS        4
 #define BUF_BYTES       (SAMPLES_PER_BUF * 2 * sizeof(int16))  // stereo
@@ -25,6 +25,14 @@ static ndspWaveBuf g_wave_bufs[NUM_BUFS];
 
 void Audio3DS_Init(void) {
   if (!g_config.enable_audio) return;
+
+  // Honour the configured rate: MSU-1 packs need it (.pcm = 44100 Hz,
+  // .opuz = 48000 Hz); the DSP resamples any channel rate to its native
+  // mixer rate in hardware. Default to 32000 Hz otherwise (cheapest for
+  // the SPC emulation).
+  int sample_rate = g_config.audio_freq;
+  if (sample_rate < 8000 || sample_rate > 48000)
+    sample_rate = 32000;
 
   if (R_FAILED(ndspInit())) {
     printf("\x1b[5;1Hndsp init failed (no dspfirm.cdc?) - muted\x1b[K");
@@ -41,7 +49,7 @@ void Audio3DS_Init(void) {
   ndspSetOutputMode(NDSP_OUTPUT_STEREO);
   ndspChnReset(0);
   ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
-  ndspChnSetRate(0, SAMPLE_RATE);
+  ndspChnSetRate(0, sample_rate);
   ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
   float mix[12] = {0};
   mix[0] = mix[1] = 1.0f;

@@ -38,6 +38,55 @@ O `--user $(id -u):$(id -g)` evita que o diretório `build/` fique com dono root
   vez, pelo menu do Luma3DS: `L+Baixo+Select → Miscellaneous options →
   Dump DSP firmware`. Sem ele o jogo funciona normalmente, porém sem som.
 
+## Gerar o .cia (instalável no menu HOME, requer CFW)
+
+O `.cia` usa o mesmo binário do `.3dsx`; a spec fica em
+`app/jni/src/src/platform/3ds/cia/` (zelda3.rsf + banner). São necessárias
+duas ferramentas extras que não vêm na imagem Docker (baixar uma vez):
+
+```bash
+cd app/jni/src/src/platform/3ds
+mkdir -p tools && cd tools
+curl -sLO https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
+unzip -o makerom-v0.19.0-ubuntu_x86_64.zip && rm makerom-v0.19.0-ubuntu_x86_64.zip
+curl -sL https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3-linux.tar.gz | tar xz
+chmod +x makerom bannertool
+```
+
+Depois, o mesmo comando Docker do build normal, trocando `make` por
+`make cia` — o resultado é `zelda3.cia`. Instale com o FBI (ou similar) e
+coloque os arquivos no SD nos mesmos lugares da tabela acima (o .cia
+também lê tudo de `sd:/3ds/zelda3/`, nada é embutido).
+
+## Músicas MSU-1 (trilha sonora em CD-quality)
+
+O port toca packs MSU-1 do A Link to the Past. Onde colocar as músicas:
+
+```
+sd:/3ds/zelda3/msu/1.pcm
+sd:/3ds/zelda3/msu/2.pcm
+...
+```
+
+E no `sd:/3ds/zelda3/zelda3.ini`:
+
+```ini
+[Sound]
+EnableMSU = 1        # 1 = pack .pcm | opuz = pack .opuz | deluxe / deluxe-opuz
+MSUPath = msu/       # subpasta dentro de sd:/3ds/zelda3/
+MSUVolume = 100
+AudioFreq = 44100    # OBRIGATÓRIO: 44100 para .pcm, 48000 para .opuz
+```
+
+- Os arquivos seguem a numeração de faixas MSU-1 padrão do ALttP
+  (`<número>.pcm`). Packs "MSU Deluxe" (com faixas extras por área) usam
+  `EnableMSU = deluxe`.
+- **Recomendado no 3DS: packs `.pcm`** — custo de CPU quase zero (leitura
+  direta do SD). Packs `.opuz` exigem decodificação Opus na CPU, que é
+  pesada no 3DS (especialmente no Old 3DS).
+- Se um arquivo de faixa não existir, o jogo cai na música original do
+  SNES para aquela faixa.
+
 ## Desempenho
 
 - **New 3DS**: widescreen 400×240 + clock de 804 MHz, automático.
