@@ -49,12 +49,15 @@ static void UploadTex(const uint32 *src, int w, int h, int src_stride,
     }
   }
   GSPGPU_FlushDataCache(stage, TEX_W * TEX_H * sizeof(uint16));
-  GX_DisplayTransfer((u32 *)stage, GX_BUFFER_DIM(TEX_W, TEX_H),
-                     (u32 *)tex->data, GX_BUFFER_DIM(TEX_W, TEX_H),
-                     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) |
-                     GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
-                     GX_TRANSFER_OUT_TILED(1));
-  gspWaitForPPF();
+  // C3D_SyncDisplayTransfer coordinates with citro3d's GX queue; a raw
+  // GX_DisplayTransfer + gspWaitForPPF races it (the PPF event is shared
+  // with frame presentation), which showed up as speckle artifacts from
+  // the GPU sampling half-transferred textures on hardware.
+  C3D_SyncDisplayTransfer((u32 *)stage, GX_BUFFER_DIM(TEX_W, TEX_H),
+                          (u32 *)tex->data, GX_BUFFER_DIM(TEX_W, TEX_H),
+                          GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) |
+                          GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) |
+                          GX_TRANSFER_OUT_TILED(1));
 }
 
 // ── RendererFuncs ───────────────────────────────────────────────────────────
@@ -129,10 +132,12 @@ void N3DS_UploadBottomScreen(const uint32 *argb) {
   UploadTex(argb, 320, 240, 320, g_stage_bot, &g_tex_bot);
 }
 
-// Present both screens. C3D_FRAME_SYNCDRAW waits for vblank, replacing the
-// old gspWaitForVBlank on rendered frames.
+// Present both screens without waiting for vblank: the GSP swaps buffers
+// at vblank on its own (no tearing), so a frame that takes slightly over
+// one vblank shows at ~55 fps instead of being quantized down to 30.
+// Pacing is handled by the main loop.
 void N3DS_Present(int top_w) {
-  C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+  C3D_FrameBegin(0);
 
   C2D_TargetClear(g_target_top, C2D_Color32(0, 0, 0, 255));
   C2D_SceneBegin(g_target_top);

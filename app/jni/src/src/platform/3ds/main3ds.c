@@ -346,12 +346,13 @@ int main(int argc, char **argv) {
   SecondScreen3DS_Init();
 
   // ── Main loop ──
-  // Game logic must run at 60 Hz for correct game speed. When rendering
-  // can't keep up with the vblank budget, frames are skipped (up to 3 in a
-  // row) so slowness shows as a lower fps instead of slow motion.
+  // Game logic is paced by measured wall time to exactly 60 Hz (with
+  // catch-up of at most 3 frames), independent of rendering. Rendering
+  // free-runs: the GSP swaps at vblank on its own, so a frame that takes
+  // slightly over one vblank costs a little fps instead of halving it.
   const u64 kTicksPerFrame = SYSCLOCK_ARM11 / 60;
-  u64 next_frame = svcGetSystemTick() + kTicksPerFrame;
-  int skips = 0;
+  u64 last_tick = svcGetSystemTick();
+  u64 tick_acc = 0;
 
   while (aptMainLoop()) {
     // ── Input ──
@@ -373,6 +374,24 @@ int main(int argc, char **argv) {
       SecondScreen3DS_HandleTouch(&pos, true);
     }
 
+    // ── Logic pacing: how many 60 Hz frames are due? ──
+    u64 now = svcGetSystemTick();
+    tick_acc += now - last_tick;
+    last_tick = now;
+    int due = (int)(tick_acc / kTicksPerFrame);
+    if (due > 3) {
+      // Way behind (load screen, app sleep): resync instead of racing.
+      due = 3;
+      tick_acc = 0;
+    } else {
+      tick_acc -= (u64)due * kTicksPerFrame;
+    }
+    if (due == 0) {
+      // Ahead of schedule: idle until the next vblank and re-check.
+      gspWaitForVBlank();
+      continue;
+    }
+
     // ── Audio ──
     u64 t0 = svcGetSystemTick();
     Audio3DS_Update();
@@ -380,7 +399,8 @@ int main(int argc, char **argv) {
 
     // ── Game logic ──
     if (!g_paused) {
-      ZeldaRunFrame(g_input1_state);
+      for (int i = 0; i < due; i++)
+        ZeldaRunFrame(g_input1_state);
       // Turbo: run an extra logic frame
       if (g_turbo)
         ZeldaRunFrame(g_input1_state);
@@ -389,31 +409,21 @@ int main(int argc, char **argv) {
     g_perf_audio += t1 - t0;
     g_perf_logic += t2 - t1;
 
-    // ── Rendering (skipped when behind) ──
-    bool behind = (s64)(svcGetSystemTick() - next_frame) > 0;
-    if (!behind || skips >= 3) {
-      DrawFrame();
-      // The map/inventory panel is near-static: 15 Hz updates are plenty
-      // and keep its software compositing cost negligible.
-      static uint32 frame_ctr;
-      if ((frame_ctr++ & 3) == 0) {
-        u64 t3 = svcGetSystemTick();
-        SecondScreen3DS_Update();
-        g_perf_ss += svcGetSystemTick() - t3;
-      }
-      // Waits for vblank internally (C3D_FRAME_SYNCDRAW).
-      N3DS_Present(g_snes_width);
-      skips = 0;
-    } else {
-      skips++;
+    // ── Rendering ──
+    DrawFrame();
+    // The map/inventory panel is near-static: 15 Hz updates are plenty
+    // and keep its software compositing cost negligible.
+    static uint32 frame_ctr;
+    if ((frame_ctr++ & 3) == 0) {
+      u64 t3 = svcGetSystemTick();
+      SecondScreen3DS_Update();
+      g_perf_ss += svcGetSystemTick() - t3;
     }
-    next_frame += kTicksPerFrame;
-    // Hard resync when very late (loads, app sleep) instead of racing ahead.
-    if ((s64)(svcGetSystemTick() - next_frame) > (s64)(4 * kTicksPerFrame))
-      next_frame = svcGetSystemTick() + kTicksPerFrame;
+    N3DS_Present(g_snes_width);
 
     // ── Perf overlay, refreshed once per second of game time ──
-    if (++g_perf_frames >= 60) {
+    g_perf_frames += due;
+    if (g_perf_frames >= 60) {
       int vals[6] = {-1, -1, -1, -1, -1, -1};
       if (g_display_perf) {
         // Sections in tenths of a millisecond (avg per frame), then fps.
