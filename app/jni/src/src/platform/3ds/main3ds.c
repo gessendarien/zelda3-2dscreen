@@ -35,6 +35,10 @@
 void N3DS_Renderer_Create(struct RendererFuncs *funcs);
 void N3DS_Present(int top_w);
 
+// second_screen.c: applies pending touch actions (equip etc.) on the game
+// thread; must run right before ZeldaRunFrame.
+void SecondScreen_RunFrameHook(void);
+
 // second_screen_3ds.c
 bool SecondScreen3DS_Init(void);
 void SecondScreen3DS_Update(void);
@@ -57,9 +61,9 @@ static int  g_snes_width, g_snes_height;
 static struct RendererFuncs g_renderer_funcs;
 static uint32 g_gamepad_modifiers;
 static uint16 g_gamepad_last_cmd[kGamepadBtn_Count];
-// Perf overlay on by default while the port is being tuned; toggled by the
-// DisplayPerf key binding.
-static bool g_display_perf = true;
+// Perf overlay (per-section timings on the bottom screen); off by default,
+// toggled by the DisplayPerf key binding.
+static bool g_display_perf;
 
 // ── Required stubs (normally in main.c with SDL mutex) ──────────────────────
 
@@ -82,6 +86,31 @@ void NORETURN Die(const char *error) {
 // consumes them via DMA, so no locking is needed.
 void ZeldaApuLock(void)   {}
 void ZeldaApuUnlock(void) {}
+
+// Referenced by SecondScreen_RunFrameHook (defined in main.c on SDL
+// platforms). Widescreen on 3DS means filling the 400px top screen.
+void ZeldaSetWidescreen(bool enable) {
+  int extra = enable ? 72 : 0;
+  g_config.extended_aspect_ratio = extra;
+  g_zenv.ppu->extraLeftRight = extra;
+  if (!enable)
+    PpuSetExtraSideSpace(g_zenv.ppu, 0, 0, 0);
+  g_snes_width = extra * 2 + 256;
+}
+
+void ZeldaApplyDimFlashesPalette(bool enable) {
+  static uint16 orig[3];
+  static bool saved;
+  if (!saved) {
+    saved = true;
+    orig[0] = kPalette_DungBgMain[0x484];
+    orig[1] = kPalette_DungBgMain[0x485];
+    orig[2] = kPalette_DungBgMain[0x486];
+  }
+  kPalette_DungBgMain[0x484] = enable ? 0x70 : orig[0];
+  kPalette_DungBgMain[0x485] = enable ? 0x95 : orig[1];
+  kPalette_DungBgMain[0x486] = enable ? 0x57 : orig[2];
+}
 
 // ── Input mapping ───────────────────────────────────────────────────────────
 
@@ -234,18 +263,19 @@ static void LoadLinkGraphics(void) {
 
 // ── 3DS-specific config ─────────────────────────────────────────────────────
 
-// Widescreen3DS key in zelda3.ini: auto (default) = widescreen on New 3DS
-// only, on = always 400×240, off = always 256×240. Parsed here instead of
-// config.c to keep the key platform-local (unknown keys only warn there).
-static int ParseWidescreen3DSKey(void) {
+// 3DS-local zelda3.ini keys (Widescreen3DS, PerfOverlay3DS), parsed here
+// instead of config.c to keep them platform-local (unknown keys only warn
+// there). Returns 1 (on), 0 (off) or -1 (absent / "auto").
+static int Parse3DSIniBool(const char *key) {
   FILE *f = fopen("zelda3.ini", "rb");
   if (!f) return -1;
+  size_t klen = strlen(key);
   char line[256];
   int result = -1;
   while (fgets(line, sizeof(line), f)) {
     char *p = line;
     while (*p == ' ' || *p == '\t') p++;
-    if (strncasecmp(p, "Widescreen3DS", 13) != 0) continue;
+    if (strncasecmp(p, key, klen) != 0) continue;
     p = strchr(p, '=');
     if (!p) continue;
     p++;
@@ -311,8 +341,9 @@ int main(int argc, char **argv) {
   // Adaptive resolution: the widescreen PPU render (400 px wide) costs ~36%
   // more than the native 256 px one, so it defaults to New 3DS only.
   // extraLeftRight = (400-256)/2 = 72; extend_y renders 240 rows (no bars).
-  int wide_override = ParseWidescreen3DSKey();
+  int wide_override = Parse3DSIniBool("Widescreen3DS");
   bool use_wide = (wide_override < 0) ? is_new3ds : (wide_override != 0);
+  g_display_perf = Parse3DSIniBool("PerfOverlay3DS") == 1;
   int extra_lr = use_wide ? 72 : 0;
 
   g_config.extended_aspect_ratio = extra_lr;
@@ -399,6 +430,8 @@ int main(int argc, char **argv) {
 
     // ── Game logic ──
     if (!g_paused) {
+      // Without this the touch-to-equip taps queue up and never apply.
+      SecondScreen_RunFrameHook();
       for (int i = 0; i < due; i++)
         ZeldaRunFrame(g_input1_state);
       // Turbo: run an extra logic frame
