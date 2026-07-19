@@ -74,6 +74,16 @@ static bool g_icons_dirty = true;
 static bool g_dark_world_cached = false;
 static uint32 g_frame;                       // update counter (30 Hz) for blinking
 static int  g_last_out_x = 2048, g_last_out_y = 2048;  // Link's last outdoor spot
+static bool g_in_cinema;                     // title/cutscene: triforce screen
+
+// Floor-plaque touch state: tapping a plaque previews that floor for ~6 s.
+static int    g_view_floor;            // signed floor being previewed
+static int    g_view_palace = -1;
+static uint32 g_view_touch_frame;      // g_frame of last tap (0 = inactive)
+// Plaque geometry from the last draw, for the touch handler.
+static bool g_strip_active;
+static int  g_strip_x0, g_strip_pw, g_strip_y0, g_strip_ph;
+static int  g_strip_floors, g_strip_basements, g_strip_palace;
 
 // SRAM snapshot
 static uint8 g_sram[256];
@@ -146,6 +156,39 @@ static void draw_number2x(int x, int y, int val, uint32 c) {
     draw_glyph2x(x + i * 8, y, kDigitFont[buf[i] - '0'], c);
 }
 
+// ── Triforce / cinema screen ────────────────────────────────────────────────
+
+// 0x00-0x05 = boot/title/file select, 0x12/0x14/0x17/0x18-0x1A = cutscenes.
+// Same mapping as mode_for_module in the SDL second screen.
+static bool module_is_cinema(int m) {
+  return m <= 0x05 || m == 0x12 || m == 0x14 || m == 0x17 ||
+         (m >= 0x18 && m <= 0x1A);
+}
+
+// Upward triangle, apex at (cx, y_top), height s (side slope ~0.58 = tan 30°).
+static void tri_up(int cx, int y_top, int s, uint32 c) {
+  for (int r = 0; r <= s; r++) {
+    int half = r * 149 / 256;
+    fill_rect(cx - half, y_top + r, half * 2 + 1, 1, c);
+  }
+}
+
+static void draw_triforce(int cx, int cy, int s, uint32 c) {
+  tri_up(cx, cy - s, s, c);
+  tri_up(cx - s * 149 / 256, cy, s, c);
+  tri_up(cx + s * 149 / 256, cy, s, c);
+}
+
+// Title screen / cutscenes: whole bottom screen black with a softly
+// pulsing dim triforce.
+static void draw_cinema_screen(void) {
+  fill_rect(0, 0, BOT_W, BOT_H, COL(0, 0, 0));
+  int ph = g_frame & 63;
+  int tri = ph < 32 ? ph : 64 - ph;   // 0..32 triangle wave
+  int g = 90 + tri * 2;
+  draw_triforce(BOT_W / 2, BOT_H / 2, 40, COL(g, g * 83 / 100, g * 41 / 100));
+}
+
 // ── Map rendering ───────────────────────────────────────────────────────────
 
 static void refresh_world_map(bool dark) {
@@ -182,21 +225,30 @@ static void draw_overworld_view(int link_x, int link_y, bool with_marker, int vi
   }
 }
 
-// Floor plaques below the dungeon map (B2 B1 1F 2F ...), current highlighted.
-// Plaque f=0 is the deepest basement, matching the layout index order.
-static void draw_floor_strip(int floors, int basements, int cur_floor) {
+// Floor plaques below the dungeon map (B2 B1 1F 2F ...). The previewed floor
+// is highlighted; when previewing another floor, the floor Link is actually
+// on keeps a small yellow marker. Plaque f=0 is the deepest basement,
+// matching the layout index order. Tappable (see HandleTouch).
+static void draw_floor_strip(int floors, int basements, int cur_floor,
+                             int view_floor, int palace) {
   int pw = (MAP_W - 8) / floors;
   if (pw > 30) pw = 30;
   int ph = 16;
   int x0 = (MAP_W - pw * floors) / 2;
   int y0 = MAP_SZ + (STATUS_H - ph) / 2;
+
+  g_strip_active = true;
+  g_strip_x0 = x0; g_strip_pw = pw; g_strip_y0 = y0; g_strip_ph = ph;
+  g_strip_floors = floors; g_strip_basements = basements;
+  g_strip_palace = palace;
+
   for (int f = 0; f < floors; f++) {
     int fl = f - basements;
     int x = x0 + f * pw;
     if (fl < -9 || fl > 8) continue;  // keep glyph lookups in range
-    bool cur = (fl == cur_floor);
-    fill_rect(x + 1, y0, pw - 2, ph, cur ? COL(60, 110, 190) : C_CELL_BG);
-    uint32 c = cur ? COL(255, 255, 255) : COL(150, 150, 170);
+    bool sel = (fl == view_floor);
+    fill_rect(x + 1, y0, pw - 2, ph, sel ? COL(60, 110, 190) : C_CELL_BG);
+    uint32 c = sel ? COL(255, 255, 255) : COL(150, 150, 170);
     int lx = x + (pw - 13) / 2, ly = y0 + (ph - 10) / 2;
     if (fl < 0) {
       draw_glyph2x(lx, ly, kGlyphB, c);
@@ -205,11 +257,14 @@ static void draw_floor_strip(int floors, int basements, int cur_floor) {
       draw_glyph2x(lx, ly, kDigitFont[fl + 1], c);
       draw_glyph2x(lx + 7, ly, kGlyphF, c);
     }
+    if (fl == cur_floor && cur_floor != view_floor)
+      fill_rect(x + 2, y0 + 1, 4, 4, COL(255, 220, 60));
   }
 }
 
 static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_info) {
   fill_rect(0, 0, MAP_W, BOT_H, C_BG_MAP);
+  g_strip_active = false;
 
   if (!indoors) {
     draw_overworld_view(link_x, link_y, true, BOT_H);
@@ -221,11 +276,18 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
   int floor      = (int8_t)((dungeon_info >> 8) & 0xFF);
 
   if (palace_idx == 0xFF) {
-    // Houses/caves have no dungeon map: keep the overworld view frozen at
-    // the spot where Link went in (same behaviour as the SDL second screen).
-    draw_overworld_view(g_last_out_x, g_last_out_y, false, BOT_H);
+    // Houses/caves have no map of their own: show a quiet triforce panel.
+    draw_triforce(MAP_W / 2, BOT_H / 2, 24, COL(70, 58, 29));
     return;
   }
+
+  // Tapping a plaque previews that floor; revert after ~6 s (180 updates).
+  int view = floor;
+  if (g_view_touch_frame && g_view_palace == palace_idx &&
+      g_frame - g_view_touch_frame < 180)
+    view = g_view_floor;
+  else
+    g_view_touch_frame = 0;
 
   // SS_RenderDungeonFloor wants a layout index (0..floors-1), not the
   // signed in-game floor (B1 = -1): offset by the basement count.
@@ -235,9 +297,10 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
   int floors    = r & 0xFF;
   int basements = (r >> 8) & 0xFF;
   if (floors > 16) floors = 16;
-  int li = floor + basements;
+  int li = view + basements;
   if (li < 0) li = 0;
   if (li > floors - 1) li = floors - 1;
+  view = li - basements;
 
   // Re-render every update: visited rooms and the map item change while
   // playing, so a cached bitmap would freeze the automap.
@@ -248,8 +311,9 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
   int off_y = (MAP_SZ - 160) / 2;
   blit2x(g_dung_map, 80, 0, 0, 80, 80, off_x, off_y);
 
-  // Blinking marker on the current room (each room = 16px → 32px after 2x)
-  if (g_frame & 4) {
+  // Blinking marker on the current room (each room = 16px → 32px after 2x),
+  // only while looking at the floor Link is actually on.
+  if (view == floor && (g_frame & 4)) {
     int room = SS_GetArea() & 0xFF;
     for (int i = 0; i < 25; i++) {
       if (lay[li * 25 + i] == room && room != 0x0F) {
@@ -260,7 +324,7 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
     }
   }
 
-  draw_floor_strip(floors, basements, floor);
+  draw_floor_strip(floors, basements, floor, view, palace_idx);
 }
 
 // ── Icon sheet + item grid ──────────────────────────────────────────────────
@@ -403,8 +467,18 @@ void SecondScreen3DS_Update(void) {
   int  link_y  = SS_GetLinkY();
   int  palace  = SS_GetDungeon();
 
-  // Remember where Link last stood outdoors: houses/caves freeze the
-  // overworld view at that spot.
+  // Title screen and cutscenes: no game state worth showing — black screen
+  // with the triforce instead of map + items.
+  g_in_cinema = module_is_cinema(SS_GetModule() & 0xFF);
+  if (g_in_cinema) {
+    g_strip_active = false;
+    draw_cinema_screen();
+    draw_perf_overlay();
+    flush_to_bottom_screen();
+    return;
+  }
+
+  // Remember where Link last stood outdoors (used by the follow map).
   if (!indoors) {
     g_last_out_x = link_x;
     g_last_out_y = link_y;
@@ -423,7 +497,7 @@ void SecondScreen3DS_Update(void) {
 // Handle a touch event on the bottom screen.
 // Returns true if an action was taken.
 bool SecondScreen3DS_HandleTouch(touchPosition *pos, bool touched) {
-  if (!touched) return false;
+  if (!touched || g_in_cinema) return false;
 
   int tx = pos->px;
   int ty = pos->py;
@@ -437,9 +511,21 @@ bool SecondScreen3DS_HandleTouch(touchPosition *pos, bool touched) {
       SS_EquipSlot(slot);
       return true;
     }
+    return false;
   }
 
-  // Left panel: future use (e.g. tap to toggle whole-map / zoomed view)
+  // Left panel: tap a floor plaque to preview that floor for a few seconds
+  // (slightly padded hitbox for finger-sized taps).
+  if (g_strip_active && ty >= g_strip_y0 - 6 &&
+      ty < g_strip_y0 + g_strip_ph + 6 && tx >= g_strip_x0) {
+    int f = (tx - g_strip_x0) / g_strip_pw;
+    if (f < g_strip_floors) {
+      g_view_floor = f - g_strip_basements;
+      g_view_palace = g_strip_palace;
+      g_view_touch_frame = g_frame | 1;  // nonzero marks the preview active
+      return true;
+    }
+  }
   return false;
 }
 
