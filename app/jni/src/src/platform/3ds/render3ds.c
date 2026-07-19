@@ -145,6 +145,10 @@ void N3DS_Present(int top_w) {
   C2D_DrawImageAt(top, (400 - top.subtex->width) / 2.0f, 0.0f, 0.0f,
                   NULL, 1.0f, 1.0f);
 
+  // Clearing also resets the depth buffer: without it, uninitialized VRAM
+  // depth values reject random texels forever — persistent rainbow
+  // speckles on real hardware (emulators hand out zeroed VRAM, hiding it).
+  C2D_TargetClear(g_target_bot, C2D_Color32(0, 0, 0, 255));
   C2D_SceneBegin(g_target_bot);
   C2D_Image bot = { &g_tex_bot, &kSubtexBottom };
   C2D_DrawImageAt(bot, 0.0f, 0.0f, 0.0f, NULL, 1.0f, 1.0f);
