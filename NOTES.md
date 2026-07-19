@@ -33,8 +33,10 @@ O `--user $(id -u):$(id -g)` evita que o diretório `build/` fique com dono root
 - O `zelda3_assets.dat` é gerado a partir da sua ROM com o
   `assets/restool.py` do repositório original (`python3 assets/restool.py
   --extract-from-rom`) — veja o README para o passo a passo.
-- O `dspfirm.cdc` é gerado uma única vez rodando o homebrew
-  [DSP1](https://github.com/zoogie/DSP1) no console.
+- O `dspfirm.cdc` é o firmware do chip DSP de áudio (código da Nintendo,
+  não pode ser distribuído junto). Extraia do próprio console, uma única
+  vez, pelo menu do Luma3DS: `L+Baixo+Select → Miscellaneous options →
+  Dump DSP firmware`. Sem ele o jogo funciona normalmente, porém sem som.
 
 ## Desempenho
 

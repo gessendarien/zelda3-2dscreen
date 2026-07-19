@@ -57,7 +57,7 @@ Installation (homebrew, runs via the Homebrew Launcher):
 2. Copy your `zelda3_assets.dat` to `sd:/3ds/zelda3/` (the executable ships no game assets — build the file with the instructions above or from the original repository).
 3. Launch it from the Homebrew Launcher. Saves go to `sd:/3ds/zelda3/saves/`.
 
-Optional: copy `src/platform/3ds/zelda3.ini` to `sd:/3ds/zelda3/zelda3.ini` to tweak settings. By default a New 3DS runs in widescreen (400×240, with the higher CPU clock enabled) and an Old 3DS runs at 256×240 for speed; override this with the `Widescreen3DS = on/off/auto` key. Audio needs a DSP firmware dump (`sd:/3ds/dspfirm.cdc`, created by running [DSP1](https://github.com/zoogie/DSP1) once); without it the game runs muted.
+Optional: copy `src/platform/3ds/zelda3.ini` to `sd:/3ds/zelda3/zelda3.ini` to tweak settings. By default a New 3DS runs in widescreen (400×240, with the higher CPU clock enabled) and an Old 3DS runs at 256×240 for speed; override this with the `Widescreen3DS = on/off/auto` key. Audio needs a DSP firmware dump (`sd:/3ds/dspfirm.cdc` — dump it once from the Luma3DS Rosalina menu: `L+Down+Select → Miscellaneous options → Dump DSP firmware`); without it the game runs muted.
 
 Building needs devkitPro (devkitARM + libctru), easiest via Docker:
 
