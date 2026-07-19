@@ -31,6 +31,7 @@ void SS_ReadSram(uint8 *out, int n);
 int  SS_GetEquippedSlot(void);
 int  SS_GetDungeon(void);
 int  SS_GetDungeonLayout(int palace, uint8 *out, int cap);
+void SS_ReadDungFlags(uint8 *out, int n);
 bool SS_RenderIconSheet(uint32 *px);
 bool SS_RenderWorldMap(uint32 *px, bool dark);
 bool SS_RenderDungeonFloor(int palace, int floorIdx, uint32 *px);
@@ -80,13 +81,17 @@ static bool g_in_cinema;                     // title/cutscene: triforce screen
 static int    g_view_floor;            // signed floor being previewed
 static int    g_view_palace = -1;
 static uint32 g_view_touch_frame;      // g_frame of last tap (0 = inactive)
-// Plaque geometry from the last draw, for the touch handler.
+// Plaque geometry from the last draw, for the touch handler. g_strip_fl
+// lists the signed floor of each drawn plaque (only revealed floors).
 static bool g_strip_active;
 static int  g_strip_x0, g_strip_pw, g_strip_y0, g_strip_ph;
-static int  g_strip_floors, g_strip_basements, g_strip_palace;
+static int  g_strip_count, g_strip_palace;
+static int8_t g_strip_fl[16];
 
-// SRAM snapshot
+// SRAM snapshot (g_ram 0xF300..0xF400: items, hearts, map/compass bits...)
 static uint8 g_sram[256];
+
+static int sram16(int off) { return g_sram[off] | (g_sram[off + 1] << 8); }
 
 // ── Software draw helpers ───────────────────────────────────────────────────
 
@@ -225,25 +230,26 @@ static void draw_overworld_view(int link_x, int link_y, bool with_marker, int vi
   }
 }
 
-// Floor plaques below the dungeon map (B2 B1 1F 2F ...). The previewed floor
-// is highlighted; when previewing another floor, the floor Link is actually
-// on keeps a small yellow marker. Plaque f=0 is the deepest basement,
-// matching the layout index order. Tappable (see HandleTouch).
-static void draw_floor_strip(int floors, int basements, int cur_floor,
+// Floor plaques below the dungeon map (B2 B1 1F 2F ...), only the floors
+// already revealed (fls, deepest basement first). The previewed floor is
+// highlighted; when previewing another floor, the floor Link is actually on
+// keeps a small yellow marker. Tappable (see HandleTouch).
+static void draw_floor_strip(const int8_t *fls, int n, int cur_floor,
                              int view_floor, int palace) {
-  int pw = (MAP_W - 8) / floors;
+  if (n <= 0) return;
+  int pw = (MAP_W - 8) / n;
   if (pw > 30) pw = 30;
   int ph = 16;
-  int x0 = (MAP_W - pw * floors) / 2;
+  int x0 = (MAP_W - pw * n) / 2;
   int y0 = MAP_SZ + (STATUS_H - ph) / 2;
 
   g_strip_active = true;
   g_strip_x0 = x0; g_strip_pw = pw; g_strip_y0 = y0; g_strip_ph = ph;
-  g_strip_floors = floors; g_strip_basements = basements;
-  g_strip_palace = palace;
+  g_strip_count = n; g_strip_palace = palace;
+  memcpy(g_strip_fl, fls, n);
 
-  for (int f = 0; f < floors; f++) {
-    int fl = f - basements;
+  for (int f = 0; f < n; f++) {
+    int fl = fls[f];
     int x = x0 + f * pw;
     if (fl < -9 || fl > 8) continue;  // keep glyph lookups in range
     bool sel = (fl == view_floor);
@@ -302,6 +308,31 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
   if (li > floors - 1) li = floors - 1;
   view = li - basements;
 
+  bool have_map     = (sram16(0x68) & (0x8000 >> palace_idx)) != 0;
+  bool have_compass = (sram16(0x64) & (0x8000 >> palace_idx)) != 0;
+
+  // Zelda-style progressive reveal: a floor is listed once Link has stepped
+  // on it (any visited room); the dungeon map item reveals the full list.
+  int8_t vis_fl[16];
+  int vis_n = 0;
+  if (have_map) {
+    for (int f = 0; f < floors; f++)
+      vis_fl[vis_n++] = (int8_t)(f - basements);
+  } else {
+    uint8 dflags[0x500];
+    SS_ReadDungFlags(dflags, sizeof(dflags));
+    for (int f = 0; f < floors; f++) {
+      int fl = f - basements;
+      bool vis = (fl == floor);  // the floor Link is on is always known
+      for (int i = 0; i < 25 && !vis; i++) {
+        uint8 v = lay[f * 25 + i];
+        if (v != 0x0F && (dflags[v * 2] & 0x0F))
+          vis = true;
+      }
+      if (vis) vis_fl[vis_n++] = (int8_t)fl;
+    }
+  }
+
   // Re-render every update: visited rooms and the map item change while
   // playing, so a cached bitmap would freeze the automap.
   if (!SS_RenderDungeonFloor(palace_idx, li, g_dung_map)) return;
@@ -311,9 +342,9 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
   int off_y = (MAP_SZ - 160) / 2;
   blit2x(g_dung_map, 80, 0, 0, 80, 80, off_x, off_y);
 
-  // Blinking marker on the current room (each room = 16px → 32px after 2x),
-  // only while looking at the floor Link is actually on.
-  if (view == floor && (g_frame & 4)) {
+  // Blinking marker on the current room (each room = 16px → 32px after 2x).
+  // Needs this dungeon's compass, and only shows on Link's actual floor.
+  if (have_compass && view == floor && (g_frame & 4)) {
     int room = SS_GetArea() & 0xFF;
     for (int i = 0; i < 25; i++) {
       if (lay[li * 25 + i] == room && room != 0x0F) {
@@ -324,7 +355,7 @@ static void draw_map_panel(bool indoors, int link_x, int link_y, int dungeon_inf
     }
   }
 
-  draw_floor_strip(floors, basements, floor, view, palace_idx);
+  draw_floor_strip(vis_fl, vis_n, floor, view, palace_idx);
 }
 
 // ── Icon sheet + item grid ──────────────────────────────────────────────────
@@ -518,9 +549,9 @@ bool SecondScreen3DS_HandleTouch(touchPosition *pos, bool touched) {
   // (slightly padded hitbox for finger-sized taps).
   if (g_strip_active && ty >= g_strip_y0 - 6 &&
       ty < g_strip_y0 + g_strip_ph + 6 && tx >= g_strip_x0) {
-    int f = (tx - g_strip_x0) / g_strip_pw;
-    if (f < g_strip_floors) {
-      g_view_floor = f - g_strip_basements;
+    int idx = (tx - g_strip_x0) / g_strip_pw;
+    if (idx < g_strip_count) {
+      g_view_floor = g_strip_fl[idx];
       g_view_palace = g_strip_palace;
       g_view_touch_frame = g_frame | 1;  // nonzero marks the preview active
       return true;
