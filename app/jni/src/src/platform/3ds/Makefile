@@ -63,7 +63,7 @@ CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS     := -g $(ARCH)
 LDFLAGS     =  -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS        := -lctru -lm -lSDL \
+LIBS        := -lcitro2d -lcitro3d -lctru -lm -lSDL \
                `$(PREFIX)pkg-config opusfile --libs 2>/dev/null || echo "-lopusfile -lopus -logg"` \
                -L$(DEVKITPRO)/portlibs/3ds/lib/
 

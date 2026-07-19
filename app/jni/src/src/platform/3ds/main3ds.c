@@ -32,7 +32,8 @@
 // ── Forward declarations ────────────────────────────────────────────────────
 
 // render3ds.c
-void N3DS_TopScreen_Create(struct RendererFuncs *funcs);
+void N3DS_Renderer_Create(struct RendererFuncs *funcs);
+void N3DS_Present(int top_w);
 
 // second_screen_3ds.c
 bool SecondScreen3DS_Init(void);
@@ -282,10 +283,8 @@ static void DrawFrame(void) {
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 int main(int argc, char **argv) {
-  // RGBA8_OES: 32-bit pixels in ABGR byte order (what the 3DS hardware expects).
-  gfxInit(GSP_RGBA8_OES, GSP_RGBA8_OES, false);
-  gfxSetDoubleBuffering(GFX_TOP,    true);
-  gfxSetDoubleBuffering(GFX_BOTTOM, true);
+  // Default BGR8 framebuffers — what citro2d's screen targets present into.
+  gfxInitDefault();
 
   // New 3DS: unlock the 804 MHz clock + L2 cache.
   bool is_new3ds = false;
@@ -340,16 +339,10 @@ int main(int argc, char **argv) {
   // Start audio (soft-fails if DSP firmware is unavailable)
   Audio3DS_Init();
 
-  // Set up top screen renderer
-  N3DS_TopScreen_Create(&g_renderer_funcs);
-
-  // Set up bottom screen second screen (takes over the console framebuffer).
-  // consoleInit switched the bottom screen to RGB565; restore RGBA8 so the
-  // 32-bit writes in second_screen_3ds.c come out right. Single-buffered:
-  // the panel only redraws at 30 Hz, so alternating buffers would flicker.
-  printf("\x1b[4;1HInitialising second screen...\x1b[K");
-  gfxSetScreenFormat(GFX_BOTTOM, GSP_RGBA8_OES);
-  gfxSetDoubleBuffering(GFX_BOTTOM, false);
+  // Set up the GPU presenter (takes over both screens; the startup console
+  // on the bottom screen stops being visible from here on).
+  printf("\x1b[4;1HInitialising renderer...\x1b[K");
+  N3DS_Renderer_Create(&g_renderer_funcs);
   SecondScreen3DS_Init();
 
   // ── Main loop ──
@@ -400,21 +393,20 @@ int main(int argc, char **argv) {
     bool behind = (s64)(svcGetSystemTick() - next_frame) > 0;
     if (!behind || skips >= 3) {
       DrawFrame();
-      // The map/inventory panel is near-static: 30 Hz updates halve its cost.
+      // The map/inventory panel is near-static: 15 Hz updates are plenty
+      // and keep its software compositing cost negligible.
       static uint32 frame_ctr;
-      if (frame_ctr++ & 1) {
+      if ((frame_ctr++ & 3) == 0) {
         u64 t3 = svcGetSystemTick();
         SecondScreen3DS_Update();
         g_perf_ss += svcGetSystemTick() - t3;
       }
-      gfxFlushBuffers();
-      gfxSwapBuffers();
+      // Waits for vblank internally (C3D_FRAME_SYNCDRAW).
+      N3DS_Present(g_snes_width);
       skips = 0;
     } else {
       skips++;
     }
-    if (!behind)
-      gspWaitForVBlank();
     next_frame += kTicksPerFrame;
     // Hard resync when very late (loads, app sleep) instead of racing ahead.
     if ((s64)(svcGetSystemTick() - next_frame) > (s64)(4 * kTicksPerFrame))

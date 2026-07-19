@@ -458,22 +458,13 @@ static void draw_perf_overlay(void) {
   }
 }
 
-// ── Blit screen buffer to 3DS bottom framebuffer ───────────────────────────
+// ── Hand the composed screen buffer to the GPU presenter ────────────────────
+
+// render3ds.c: converts to RGB565 and tiles it into the bottom texture.
+void N3DS_UploadBottomScreen(const uint32 *argb);
 
 static void flush_to_bottom_screen(void) {
-  // Bottom screen: 320×240 in landscape, column-major 240 rows × 320 cols.
-  uint32 *fb = (uint32 *)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
-
-  // x-outer / y-inner keeps the column-major framebuffer writes sequential.
-  for (int x = 0; x < BOT_W; x++) {
-    uint32 *col = fb + x * BOT_H + (BOT_H - 1);
-    const uint32 *s = g_screen + x;
-    for (int y = 0; y < BOT_H; y++, s += BOT_W) {
-      // ARGB → RGBA
-      uint32 p = *s;
-      col[-y] = (p << 8) | (p >> 24);
-    }
-  }
+  N3DS_UploadBottomScreen(g_screen);
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
