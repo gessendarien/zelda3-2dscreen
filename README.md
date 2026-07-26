@@ -8,7 +8,7 @@ A native Nintendo 3DS port of *The Legend of Zelda: A Link to the Past*, reverse
 ## Acknowledgements & Credits
 * **snesrev** for the monumental effort of reverse-engineering the original game into the **[zelda3 C port](https://github.com/snesrev/zelda3)**.
 * **samyost1** for the fantastic **[zelda3-android](https://github.com/samyost1/zelda3-android)** port, which introduced the dual-screen mechanics and Android support that served as the base for this project.
-* **apadinandrin** for their work on bringing the original C codebase to the 3DS platform in the **[apadinandrin/zelda3-3ds](https://github.com/apadinandrin/zelda3-3ds)** repository.
+* **padinadrian** for their work on bringing the original C codebase to the 3DS platform in the **[padinadrian/zelda3-3ds](https://github.com/padinadrian/zelda3-3ds)** repository.
 
 ## Instructions
 
