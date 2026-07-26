@@ -1,0 +1,11 @@
+zelda3.cia
+zelda3.elf
+zelda3.3dsx
+zelda3.sfc
+zelda3.smdh
+zelda3_assets.dat
+build/
+gl_temp/
+*.pyc
+DSP1.cia
+DSP1.3dsx

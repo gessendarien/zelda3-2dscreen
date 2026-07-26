@@ -1,0 +1,64 @@
+BasicInfo:
+  Title: Zelda3
+  CompanyCode: 00
+  ProductCode: CTR-P-ZL3D
+  ContentType: Application
+  Logo: Nintendo
+
+TitleInfo:
+  UniqueId: 0x01337
+  Category: Application
+
+Option:
+  UseOnSD: true
+
+AccessControlInfo:
+  CoreVersion: 2
+  MemoryType: Application
+  SystemMode: 64MB
+  IdealProcessor: 0
+  AffinityMask: 1
+  Priority: 16
+  HandleTableSize: 512
+
+  ServiceAccessControl:
+    - $NULL
+
+  SystemCallAccess:
+    ControlMemory: 1
+    QueryMemory: 2
+    ExitProcess: 3
+    GetProcessIdealProcessor: 4
+    GetProcessProcessorId: 5
+    CreateThread: 6
+    ExitThread: 7
+    SleepThread: 8
+    GetThreadPriority: 9
+    SetThreadPriority: 10
+    GetThreadCoreMask: 11
+    SetThreadCoreMask: 12
+    GetCurrentProcessorNumber: 13
+    SignalEvent: 14
+    ClearEvent: 15
+    CreateTimer: 16
+    SetTimer: 17
+    CancelTimer: 18
+    ClearTimer: 19
+    GetResourceLimit: 20
+    GetResourceLimitLimitValues: 21
+    GetResourceLimitCurrentValues: 22
+    OutputDebugString: 34
+    CreateMutex: 45
+    ReleaseMutex: 46
+    CreateAddressArbiter: 47
+    ArbitrateAddress: 48
+    CloseHandle: 35
+    WaitSynchronization1: 36
+    WaitSynchronizationN: 37
+    SignalAndWait: 38
+    DuplicateHandle: 39
+
+SystemControlInfo:
+  SaveDataSize: 1MB
+  RemasterVersion: 0
+  StackSize: 0x40000

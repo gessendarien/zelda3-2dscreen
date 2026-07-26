@@ -21,8 +21,8 @@ TARGET      := zelda3
 BUILD       := build
 ROMFS       :=
 
-# SRC_ROOT = app/jni/src/ (three levels up from src/platform/3ds/)
-SRC_ROOT    := ../../..
+# SRC_ROOT = app/jni/src/
+SRC_ROOT    := ../app/jni/src
 
 APP_TITLE   := The Legend of Zelda: A Link to the Past (Dual Screen)
 APP_AUTHOR  := snesrev, Lywx, JeodC, apadin
@@ -33,7 +33,7 @@ APP_VERSION := $(shell git -C $(SRC_ROOT) rev-parse --short HEAD 2>/dev/null || 
 #---------------------------------------------------------------------------------
 GAME_SRC    := $(SRC_ROOT)/src
 SNES_SRC    := $(SRC_ROOT)/snes
-PLAT_SRC    := .
+PLAT_SRC    := $(SRC_ROOT)/src/platform/3ds
 OPUS_SRC    := $(SRC_ROOT)/third_party/opus-1.3.1-stripped
 
 SOURCES     := $(GAME_SRC) $(SNES_SRC) $(PLAT_SRC) $(OPUS_SRC)
@@ -55,7 +55,7 @@ CFLAGS      := -g -Wall -O3 -fomit-frame-pointer -mword-relocations \
 CFLAGS      += $(INCLUDE) -D__3DS__ \
                -DSYSTEM_VOLUME_MIXER_AVAILABLE=0 \
                -Wno-parentheses -Wno-unused-function -Wno-format \
-               -I$(DEVKITPRO)/portlibs/3ds/include/SDL \
+               -I$(DEVKITPRO)/portlibs/3ds/include/SDL2 \
                `$(PREFIX)pkg-config opusfile --cflags 2>/dev/null || echo ""`
 
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
@@ -63,7 +63,7 @@ CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS     := -g $(ARCH)
 LDFLAGS     =  -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS        := -lcitro2d -lcitro3d -lctru -lm
+LIBS        := -lSDL2 -lcitro2d -lcitro3d -lctru -lm
 LIBDIRS     := $(PORTLIBS) $(CTRULIB)
 
 #---------------------------------------------------------------------------------
@@ -86,8 +86,8 @@ _GAME_C := $(filter-out %/main.c %/opengl.c %/glsl_shader.c, $(_GAME_C))
 # SNES emulation source
 _SNES_C := $(wildcard $(SNES_SRC)/*.c)
 
-# 3DS platform source (this directory — PLAT_SRC=. is relative to the Makefile)
-_PLAT_C := $(wildcard $(CURDIR)/*.c)
+# 3DS platform source
+_PLAT_C := $(wildcard $(CURDIR)/$(PLAT_SRC)/*.c)
 
 # Opus decoder (amalgam file)
 _OPUS_C := $(OPUS_SRC)/opus_decoder_amalgam.c
@@ -134,9 +134,8 @@ MAKEROM    ?= $(if $(wildcard $(CURDIR)/tools/makerom),$(CURDIR)/tools/makerom,m
 BANNERTOOL ?= $(if $(wildcard $(CURDIR)/tools/bannertool),$(CURDIR)/tools/bannertool,bannertool)
 
 cia: all
-	$(BANNERTOOL) makebanner -i cia/banner.png -a cia/banner.wav -o $(BUILD)/banner.bnr
-	$(MAKEROM) -f cia -o $(TARGET).cia -elf $(TARGET).elf -rsf cia/zelda3.rsf \
-	  -icon $(TARGET).smdh -banner $(BUILD)/banner.bnr -target t -exefslogo
+	$(MAKEROM) -f cia -o $(TARGET).cia -elf $(TARGET).elf -rsf $(CURDIR)/$(PLAT_SRC)/cia/zelda3.rsf \
+	  -icon $(TARGET).smdh -target t -exefslogo
 	@echo built ... $(TARGET).cia
 
 clean:

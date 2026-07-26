@@ -1,0 +1,54 @@
+TARGET_EXEC:=zelda3
+ROM:=tables/zelda3.sfc
+SRCS:=$(wildcard src/*.c src/platform/linux/*.c snes/*.c) third_party/gl_core/gl_core_3_1.c third_party/opus-1.3.1-stripped/opus_decoder_amalgam.c
+OBJS:=$(SRCS:%.c=%.o)
+PYTHON:=/usr/bin/env python3
+
+# 3DS toolchain specifics
+ifeq ($(strip $(DEVKITPRO)),)
+$(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitPro")
+endif
+ifeq ($(strip $(DEVKITARM)),)
+$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
+endif
+
+include $(DEVKITARM)/3ds_rules
+
+CC := arm-none-eabi-gcc
+CXX := arm-none-eabi-g++
+LD := arm-none-eabi-gcc
+SMDHTOOL := smdhtool
+MAKEROM := makerom
+
+CFLAGS := -g -Wall -O3 -mword-relocations -fomit-frame-pointer -ffast-math -DFLOAT_APPROX -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -I . -D__3DS__ -DZELDA3_SECOND_SCREEN=1 -DSYSTEM_VOLUME_MIXER_AVAILABLE=0 $(shell $(DEVKITPRO)/portlibs/3ds/bin/sdl2-config --cflags) -I$(DEVKITPRO)/libctru/include -I$(DEVKITPRO)/portlibs/3ds/include
+LDFLAGS := -specs=3dsx.specs -g -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -L$(DEVKITPRO)/libctru/lib -L$(DEVKITPRO)/portlibs/3ds/lib
+SDLFLAGS := $(shell $(DEVKITPRO)/portlibs/3ds/bin/sdl2-config --libs) -lcitro3d -lctru -lm
+
+.PHONY: all clean clean_obj clean_gen cia
+
+all: $(TARGET_EXEC).3dsx cia
+
+$(TARGET_EXEC).elf: $(OBJS)
+	$(LD) -o $@ $(OBJS) $(LDFLAGS) $(SDLFLAGS)
+
+$(TARGET_EXEC).smdh:
+	$(SMDHTOOL) --create "Zelda3" "Zelda3 Port" "snesrev" $(DEVKITPRO)/libctru/default_icon.png $@
+
+$(TARGET_EXEC).3dsx: $(TARGET_EXEC).elf $(TARGET_EXEC).smdh
+	3dsxtool $< $@ --smdh=$(TARGET_EXEC).smdh
+
+cia: $(TARGET_EXEC).cia
+
+$(TARGET_EXEC).cia: $(TARGET_EXEC).elf $(TARGET_EXEC).smdh
+	@echo "Creating CIA..."
+	$(MAKEROM) -f cia -o $@ -elf $< -rsf cia.rsf -icon $(TARGET_EXEC).smdh || echo "Warning: makerom failed. Are rsf/banner/icon present?"
+
+%.o : %.c
+	$(CC) -c $(CFLAGS) $< -o $@
+
+clean: clean_obj clean_gen
+clean_obj:
+	@$(RM) $(OBJS) $(TARGET_EXEC).elf $(TARGET_EXEC).3dsx $(TARGET_EXEC).cia
+clean_gen:
+	@$(RM) tables/zelda3_assets.dat tables/*.txt tables/*.png tables/sprites/*.png tables/*.yaml
+	@rm -rf tables/__pycache__ tables/dungeon tables/img tables/overworld tables/sound

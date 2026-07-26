@@ -312,6 +312,7 @@ static void DrawFrame(void) {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
+#undef main
 int main(int argc, char **argv) {
   // Default BGR8 framebuffers — what citro2d's screen targets present into.
   gfxInitDefault();
@@ -366,6 +367,11 @@ int main(int argc, char **argv) {
   ZeldaEnableMsu(g_config.enable_msu);
   ZeldaSetLanguage(g_config.language);
   ZeldaReadSram();
+
+  // On 3DS, always enable audio unless the user explicitly set EnableAudio=0.
+  // g_config.enable_audio defaults to false (zero-init) and the stock
+  // zelda3.ini often lacks a [Sound] section, which would leave audio off.
+  g_config.enable_audio = true;
 
   // Start audio (soft-fails if DSP firmware is unavailable)
   Audio3DS_Init();
@@ -426,6 +432,7 @@ int main(int argc, char **argv) {
     // ── Audio ──
     u64 t0 = svcGetSystemTick();
     Audio3DS_Update();
+    ZeldaDiscardUnusedAudioFrames();
     u64 t1 = svcGetSystemTick();
 
     // ── Game logic ──
