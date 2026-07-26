@@ -343,7 +343,7 @@ int main(int argc, char **argv) {
   // more than the native 256 px one, so it defaults to New 3DS only.
   // extraLeftRight = (400-256)/2 = 72; extend_y renders 240 rows (no bars).
   int wide_override = Parse3DSIniBool("Widescreen3DS");
-  bool use_wide = (wide_override < 0) ? is_new3ds : (wide_override != 0);
+  bool use_wide = (wide_override < 0) ? true : (wide_override != 0);
   g_display_perf = Parse3DSIniBool("PerfOverlay3DS") == 1;
   int extra_lr = use_wide ? 72 : 0;
 
