@@ -16,6 +16,7 @@ A native Nintendo 3DS port of *The Legend of Zelda: A Link to the Past*, reverse
 ### 1. Build the game (.cia)
 1. Place your legally owned original ROM of the game (`.sfc` extension) inside the `3ds/` folder of this project.
 2. Rename your ROM file to exactly **`zelda3.sfc`**.
+   * *(Note: If you plan to build the game in a language other than English, you MUST ALSO place a translated SNES ROM of that language in the `3ds/` folder and name it using the language code, for example, `es.sfc` for Spanish, `de.sfc` for German, etc).*
 3. Open a terminal, navigate to the `3ds/` directory, and run the build script:
    ```bash
    ./build3ds.sh

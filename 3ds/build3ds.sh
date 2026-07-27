@@ -42,8 +42,21 @@ done
 echo "Selected language: $opt ($LANG_OPT)"
 
 RESTOOL_ARGS="--extract-from-rom"
-if [ "$LANG_OPT" != "en" ]; then
+if [ "$LANG_OPT" != "en" ] && [ "$LANG_OPT" != "redux" ]; then
+    ROM_LANG="${LANG_OPT}.sfc"
+    if [ ! -f "3ds/$ROM_LANG" ]; then
+        echo "========================================================"
+        echo "ERROR FATAL: Te falta la ROM en ese idioma."
+        echo "Para compilar en '$LANG_OPT', DEBES conseguir la ROM"
+        echo "del juego en ese idioma y ponerla en la carpeta 3ds/"
+        echo "con el nombre exacto: $ROM_LANG"
+        echo "========================================================"
+        exit 1
+    fi
+    cp 3ds/$ROM_LANG tables/$ROM_LANG
     RESTOOL_ARGS="--extract-from-rom --languages=$LANG_OPT"
+elif [ "$LANG_OPT" == "redux" ]; then
+    RESTOOL_ARGS="--extract-from-rom --languages=redux"
 fi
 
 
@@ -63,6 +76,13 @@ docker run --rm -v "$(pwd):/src" devkitpro/devkitarm bash -c "
       unzip -q zelda3-0.3.zip
     fi &&
     cp tables/zelda3.sfc zelda3-0.3/zelda3.sfc &&
+    if [ "$LANG_OPT" != "en" ] && [ "$LANG_OPT" != "redux" ]; then
+        cp tables/${LANG_OPT}.sfc zelda3-0.3/${LANG_OPT}.sfc &&
+        cd zelda3-0.3 &&
+        echo "Extracting dialogue for language ${LANG_OPT}..." &&
+        python3 assets/restool.py --extract-dialogue -r ${LANG_OPT}.sfc &&
+        cd ..
+    fi &&
     cd zelda3-0.3 &&
     python3 assets/restool.py $RESTOOL_ARGS &&
     cp zelda3_assets.dat /src/3ds/ &&
