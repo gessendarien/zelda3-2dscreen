@@ -9,3 +9,6 @@ gl_temp/
 *.pyc
 DSP1.cia
 DSP1.3dsx
+banner.bin
+banner_image.png
+clean_audio.wav
