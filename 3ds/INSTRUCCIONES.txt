@@ -1,0 +1,15 @@
+=========================================
+INSTRUCCIONES DE INSTALACIÓN
+=========================================
+
+1. Elige el idioma de tu preferencia en el menú al correr el script.
+2. Copia la carpeta `3ds` (que contiene los archivos `zelda3_assets.dat` y `zelda3.ini`) y el archivo `zelda3.cia` a la raíz de la tarjeta SD de tu consola.
+3. Pon la tarjeta SD de vuelta en tu consola, entra a la aplicación FBI, busca e instala el archivo `.cia` y a disfrutar.
+
+=========================================
+INSTALLATION INSTRUCTIONS
+=========================================
+
+1. Choose your preferred language from the menu when running the script.
+2. Copy the `3ds` folder (which contains the `zelda3_assets.dat` and `zelda3.ini` files) and the `zelda3.cia` file to the root of your console's SD card.
+3. Put the SD card back into your console, open the FBI app, locate and install the `.cia` file, and enjoy!
