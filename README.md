@@ -16,13 +16,13 @@ A native Nintendo 3DS port of *The Legend of Zelda: A Link to the Past*, reverse
 ### 1. Build the game (.cia)
 1. Place your legally owned original ROM of the game (`.sfc` extension) inside the `3ds/` folder of this project.
 2. Rename your ROM file to exactly **`zelda3.sfc`**.
-   * *(Note: If you plan to build the game in a language other than English, you MUST ALSO place a translated SNES ROM of that language in the `3ds/` folder and name it using the language code, for example, `es.sfc` for Spanish, `de.sfc` for German, etc).*
+   * *(Note: If you plan to build the game in a language other than English, you MUST ALSO place a translated SNES ROM of that language in the `3ds/` folder and name it using the specific language code, for example, `es.sfc` for Spanish, `de.sfc` for German, etc. You can easily create this translated ROM by using a free online tool like [RomPatcher.js](https://www.marcrobledo.com/RomPatcher.js/) to apply a translation patch `.ips` or `.ups` to your original `zelda3.sfc` file).*
 3. Open a terminal, navigate to the `3ds/` directory, and run the build script:
    ```bash
    ./build3ds.sh
    ```
-4. The script will ask you to select a language from a list. Type the number of your preferred language (e.g. `es` for Spanish) and press Enter.
-5. The **`zelda3.cia`** file and a **`zelda3.ini`** configuration file will be automatically generated in that same folder, ready to be installed.
+4. The script will ask you to select a language from a list. Type the number of your preferred language and press Enter.
+5. Once the build finishes successfully, the **`zelda3.cia`** game installer, a **`zelda3_assets.dat`** resource file, and a **`zelda3.ini`** configuration file will be automatically generated in that same folder.
 
 ### 2. Move files to your console
 1. Transfer the `zelda3.cia` file to your console's SD card and install it using the FBI application.
