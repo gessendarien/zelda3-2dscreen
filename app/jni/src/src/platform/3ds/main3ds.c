@@ -116,18 +116,22 @@ void ZeldaApplyDimFlashesPalette(bool enable) {
 
 static int Remap3dsButton(u32 bit) {
   switch (bit) {
-    case KEY_A:      return kGamepadBtn_A;
-    case KEY_B:      return kGamepadBtn_B;
-    case KEY_X:      return kGamepadBtn_X;
-    case KEY_Y:      return kGamepadBtn_Y;
-    case KEY_L:      return kGamepadBtn_L1;
-    case KEY_R:      return kGamepadBtn_R1;
+    case KEY_A:      return kGamepadBtn_Y; // Item
+    case KEY_B:      return kGamepadBtn_B; // Sword
+    case KEY_X:      return kGamepadBtn_A; // Action (Lift/Dash/Read)
+    case KEY_Y:      return kGamepadBtn_X; // Map
+    case KEY_L:      return kGamepadBtn_A; // Action alternative
+    case KEY_R:      return kGamepadBtn_A; // Action alternative
     case KEY_SELECT: return kGamepadBtn_Guide;
     case KEY_START:  return kGamepadBtn_Start;
-    case KEY_DUP:    return kGamepadBtn_DpadUp;
-    case KEY_DDOWN:  return kGamepadBtn_DpadDown;
-    case KEY_DLEFT:  return kGamepadBtn_DpadLeft;
-    case KEY_DRIGHT: return kGamepadBtn_DpadRight;
+    case KEY_DUP:
+    case KEY_CPAD_UP:    return kGamepadBtn_DpadUp;
+    case KEY_DDOWN:
+    case KEY_CPAD_DOWN:  return kGamepadBtn_DpadDown;
+    case KEY_DLEFT:
+    case KEY_CPAD_LEFT:  return kGamepadBtn_DpadLeft;
+    case KEY_DRIGHT:
+    case KEY_CPAD_RIGHT: return kGamepadBtn_DpadRight;
     case KEY_UP:     return kGamepadBtn_DpadUp;
     case KEY_DOWN:   return kGamepadBtn_DpadDown;
     case KEY_LEFT:   return kGamepadBtn_DpadLeft;

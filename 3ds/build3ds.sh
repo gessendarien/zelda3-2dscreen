@@ -45,6 +45,17 @@ docker run --rm -v "$(pwd):/src" devkitpro/devkitarm bash -c "
       chmod +x makerom &&
       mv makerom /usr/local/bin/
     fi &&
+    echo 'Preparing Bannertool...' &&
+    if ! command -v bannertool &> /dev/null; then
+      curl -L https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip -o bannertool.zip &&
+      unzip -o bannertool.zip &&
+      chmod +x linux-x86_64/bannertool &&
+      mv linux-x86_64/bannertool /usr/local/bin/bannertool &&
+      rm -rf linux-x86_64 windows-i686 windows-x86_64 bannertool.zip
+    fi &&
+    echo 'Building Banner...' &&
+    cd /src/3ds &&
+    bannertool makebanner -i banner_image.png -a clean_audio.wav -o banner.bin &&
     echo 'Building Zelda3 (3DSX and CIA)...' &&
     cd /src/3ds &&
     make clean &&

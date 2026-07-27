@@ -24,8 +24,10 @@ ROMFS       :=
 # SRC_ROOT = app/jni/src/
 SRC_ROOT    := ../app/jni/src
 
-APP_TITLE   := The Legend of Zelda: A Link to the Past (Dual Screen)
-APP_AUTHOR  := snesrev, Lywx, JeodC, apadin
+APP_TITLE   := Zelda: A Link to the Past
+APP_DESCRIPTION := The Legend of Zelda
+APP_AUTHOR  := Packaged by gessendarien
+APP_ICON    := ../icon.png
 APP_VERSION := $(shell git -C $(SRC_ROOT) rev-parse --short HEAD 2>/dev/null || echo "dev")
 
 #---------------------------------------------------------------------------------
@@ -135,7 +137,7 @@ BANNERTOOL ?= $(if $(wildcard $(CURDIR)/tools/bannertool),$(CURDIR)/tools/banner
 
 cia: all
 	$(MAKEROM) -f cia -o $(TARGET).cia -elf $(TARGET).elf -rsf $(CURDIR)/$(PLAT_SRC)/cia/zelda3.rsf \
-	  -icon $(TARGET).smdh -target t -exefslogo
+	  -icon $(TARGET).smdh -banner banner.bin -target t -exefslogo
 	@echo built ... $(TARGET).cia
 
 clean:
