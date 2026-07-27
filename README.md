@@ -1,5 +1,6 @@
 # zelda3-2dscreen
 
+![Banner](3ds/banner/banner_image.png)
 A native Nintendo 3DS port of *The Legend of Zelda: A Link to the Past*, reverse-engineered into C. This port features dual-screen support, stable 60 FPS gameplay, and fully functional hardware-accelerated audio using the 3DS NDSP engine.
 
 <img src="showcase.png" width="300" />
