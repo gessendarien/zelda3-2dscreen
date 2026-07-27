@@ -46,10 +46,10 @@ if [ "$LANG_OPT" != "en" ] && [ "$LANG_OPT" != "redux" ]; then
     ROM_LANG="${LANG_OPT}.sfc"
     if [ ! -f "3ds/$ROM_LANG" ]; then
         echo "========================================================"
-        echo "ERROR FATAL: Te falta la ROM en ese idioma."
-        echo "Para compilar en '$LANG_OPT', DEBES conseguir la ROM"
-        echo "del juego en ese idioma y ponerla en la carpeta 3ds/"
-        echo "con el nombre exacto: $ROM_LANG"
+        echo "FATAL ERROR: Missing language ROM."
+        echo "To build the game in '$LANG_OPT', you MUST provide"
+        echo "a translated SNES ROM in that language and place it"
+        echo "inside the 3ds/ folder with the exact name: $ROM_LANG"
         echo "========================================================"
         exit 1
     fi
