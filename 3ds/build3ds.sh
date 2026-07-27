@@ -76,10 +76,10 @@ docker run --rm -v "$(pwd):/src" devkitpro/devkitarm bash -c "
       unzip -q zelda3-0.3.zip
     fi &&
     cp tables/zelda3.sfc zelda3-0.3/zelda3.sfc &&
-    if [ "$LANG_OPT" != "en" ] && [ "$LANG_OPT" != "redux" ]; then
+    if [ '${LANG_OPT}' != 'en' ] && [ '${LANG_OPT}' != 'redux' ]; then
         cp tables/${LANG_OPT}.sfc zelda3-0.3/${LANG_OPT}.sfc &&
         cd zelda3-0.3 &&
-        echo "Extracting dialogue for language ${LANG_OPT}..." &&
+        echo 'Extracting dialogue for language ${LANG_OPT}...' &&
         python3 assets/restool.py --extract-dialogue -r ${LANG_OPT}.sfc &&
         cd ..
     fi &&
