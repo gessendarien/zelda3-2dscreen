@@ -12,17 +12,34 @@ if [ ! -f "3ds/zelda3.sfc" ]; then
 fi
 
 echo "Select the language for the build:"
-options=("en" "es" "de" "fr" "fr-c" "pt" "pl" "nl" "sv" "redux")
+options=(
+    "English"
+    "Español"
+    "Deutsch"
+    "Français"
+    "Français Canadien"
+    "Português"
+    "Polski"
+    "Nederlands"
+    "Svenska"
+    "ALttP Redux"
+)
 select opt in "${options[@]}"; do
     case $opt in
-        "en"|"es"|"de"|"fr"|"fr-c"|"pt"|"pl"|"nl"|"sv"|"redux")
-            echo "Selected language: $opt"
-            LANG_OPT=$opt
-            break
-            ;;
+        "English") LANG_OPT="en"; break;;
+        "Español") LANG_OPT="es"; break;;
+        "Deutsch") LANG_OPT="de"; break;;
+        "Français") LANG_OPT="fr"; break;;
+        "Français Canadien") LANG_OPT="fr-c"; break;;
+        "Português") LANG_OPT="pt"; break;;
+        "Polski") LANG_OPT="pl"; break;;
+        "Nederlands") LANG_OPT="nl"; break;;
+        "Svenska") LANG_OPT="sv"; break;;
+        "ALttP Redux") LANG_OPT="redux"; break;;
         *) echo "Invalid option $REPLY";;
     esac
 done
+echo "Selected language: $opt ($LANG_OPT)"
 
 RESTOOL_ARGS="--extract-from-rom"
 if [ "$LANG_OPT" != "en" ]; then
