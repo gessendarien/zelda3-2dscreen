@@ -20,11 +20,12 @@ A native Nintendo 3DS port of *The Legend of Zelda: A Link to the Past*, reverse
    ```bash
    ./build3ds.sh
    ```
-4. The **`zelda3.cia`** file will be automatically generated in that same folder, ready to be installed.
+4. The script will ask you to select a language from a list. Type the number of your preferred language (e.g. `es` for Spanish) and press Enter.
+5. The **`zelda3.cia`** file and a **`zelda3.ini`** configuration file will be automatically generated in that same folder, ready to be installed.
 
 ### 2. Move files to your console
 1. Transfer the `zelda3.cia` file to your console's SD card and install it using the FBI application.
-2. Transfer the **`zelda3_assets.dat`** file (which was also generated in your `3ds/` folder) to your SD card in the following exact path: `SD:/3ds/zelda3/zelda3_assets.dat`.
+2. Transfer the **`zelda3_assets.dat`** and **`zelda3.ini`** files (which were also generated in your `3ds/` folder) to your SD card in the following exact path: `SD:/3ds/zelda3/` (i.e. `SD:/3ds/zelda3/zelda3_assets.dat` and `SD:/3ds/zelda3/zelda3.ini`).
 
 ### 3. Fixing Muted Audio (Important)
 If you launch the game and hear no music or sound effects, your console needs to dump the audio firmware (DSP) to the SD card:

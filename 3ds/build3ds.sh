@@ -11,6 +11,25 @@ if [ ! -f "3ds/zelda3.sfc" ]; then
     exit 1
 fi
 
+echo "Select the language for the build:"
+options=("en" "es" "de" "fr" "fr-c" "pt" "pl" "nl" "sv" "redux")
+select opt in "${options[@]}"; do
+    case $opt in
+        "en"|"es"|"de"|"fr"|"fr-c"|"pt"|"pl"|"nl"|"sv"|"redux")
+            echo "Selected language: $opt"
+            LANG_OPT=$opt
+            break
+            ;;
+        *) echo "Invalid option $REPLY";;
+    esac
+done
+
+RESTOOL_ARGS="--extract-from-rom"
+if [ "$LANG_OPT" != "en" ]; then
+    RESTOOL_ARGS="--extract-from-rom --languages=$LANG_OPT"
+fi
+
+
 echo "Copying ROM for extraction..."
 mkdir -p tables
 cp 3ds/zelda3.sfc tables/zelda3.sfc
@@ -28,7 +47,7 @@ docker run --rm -v "$(pwd):/src" devkitpro/devkitarm bash -c "
     fi &&
     cp tables/zelda3.sfc zelda3-0.3/zelda3.sfc &&
     cd zelda3-0.3 &&
-    python3 assets/restool.py --extract-from-rom &&
+    python3 assets/restool.py $RESTOOL_ARGS &&
     cp zelda3_assets.dat /src/3ds/ &&
     echo 'Building SDL2 for 3DS...' &&
     if [ ! -d '/src/SDL2-3DS' ]; then
@@ -63,3 +82,7 @@ docker run --rm -v "$(pwd):/src" devkitpro/devkitarm bash -c "
     echo 'Build process completed successfully! Your files are ready in the 3ds/ folder.'
 "
 rm -f zelda3.3dsx zelda3.smdh zelda3.elf
+
+echo "[General]" > 3ds/zelda3.ini
+echo "Language = $LANG_OPT" >> 3ds/zelda3.ini
+echo "zelda3.ini generated with Language = $LANG_OPT"
