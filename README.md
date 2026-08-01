@@ -34,3 +34,6 @@ If you launch the game and hear no music or sound effects, your console needs to
    Both options will dump the audio file automatically. (Once the problem is solved, you can delete the DSP1 application).
 
 And that's it! You can now enjoy the game.
+
+## Windows Building
+To build it on Windows, install Git, Docker, and WSL. Open Git Bash in the `3ds` folder and run `MSYS_NO_PATHCONV=1` before running `./build3ds.sh`.
